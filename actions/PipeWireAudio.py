@@ -369,94 +369,60 @@ class PipeWireAudio(ActionBase):
         def_font_size = int(defaults.get("font-size", 15))
         def_font_desc = f"{def_font_family} {def_font_size}"
 
-        # Configuraciones de texto (Nombre)
+        def draw_text_section(key_suffix, text, y_pos):
+            align = settings.get(f"align_{key_suffix}", def_align)
+            out_width = int(settings.get(f"outline_width_{key_suffix}", def_out_width))
+            c_out = parse_color(settings.get(f"outline_color_{key_suffix}", def_out_color))
+            c_text = parse_color(settings.get(f"color_{key_suffix}", def_color))
+            curr_font = settings.get(f"font_desc_{key_suffix}", def_font_desc)
+            desc = Pango.FontDescription.from_string(curr_font) if curr_font else Pango.FontDescription()
+
+            layout = PangoCairo.create_layout(ctx)
+            layout.set_font_description(desc)
+            layout.set_text(text, -1)
+            w_pango, h_pango = layout.get_pixel_size()
+
+            if align == "left": x = int(width * 0.01)
+            elif align == "right": x = int(width * 0.99 - w_pango)
+            else: x = int((width - w_pango) / 2)
+            
+            if out_width > 0:
+                ctx.move_to(x, y_pos)
+                PangoCairo.layout_path(ctx, layout)
+                ctx.set_source_rgba(*c_out)
+                ctx.set_line_width(out_width * 2)
+                ctx.set_line_join(cairo.LINE_JOIN_ROUND)
+                ctx.stroke()
+            
+            ctx.set_source_rgba(*c_text)
+            ctx.move_to(x, y_pos)
+            PangoCairo.show_layout(ctx, layout)
+
+        # Nombre (arriba, y=3)
         text_name = settings.get("text_name", "")
         if not text_name:
             text_name = dev_desc
             if len(text_name) > 15:
                 text_name = text_name[:13] + "..."
-        else:
-            text_name = text_name.replace("{vol}", str(vol_pct))
-            
-        align_name = settings.get("align_name", def_align)
-        out_width_name = settings.get("outline_width_name", def_out_width)
-        c_out_name = parse_color(settings.get("outline_color_name", def_out_color))
-        c_name = parse_color(settings.get("color_name", def_color))
+        text_name = text_name.replace("{vol}", str(vol_pct))
         
-        curr_font_name = settings.get("font_desc_name", def_font_desc)
-        desc_name = Pango.FontDescription.from_string(curr_font_name) if curr_font_name else Pango.FontDescription()
-            
-        # Configuraciones de texto (Porcentaje)
+        draw_text_section("name", text_name, 3)
+
+        # Porcentaje (un poco más abajo, debajo del nombre)
         text_pct = settings.get("text_pct", "")
         if not text_pct:
             text_pct = f"{vol_pct} %"
-        else:
-            text_pct = text_pct.replace("{vol}", str(vol_pct))
-            
-        align_pct = settings.get("align_pct", def_align)
-        out_width_pct = settings.get("outline_width_pct", def_out_width)
-        c_out_pct = parse_color(settings.get("outline_color_pct", def_out_color))
-        c_pct = parse_color(settings.get("color_pct", def_color))
-
-        curr_font_pct = settings.get("font_desc_pct", def_font_desc)
-        desc_pct = Pango.FontDescription.from_string(curr_font_pct) if curr_font_pct else Pango.FontDescription()
-
-        # Barra
-        c_bar = parse_color(settings.get("color_bar", "#FFFFFF"))
-
-        # --- 1. Dibujar el Nombre del Dispositivo (Arriba) ---
-        layout_name = PangoCairo.create_layout(ctx)
-        layout_name.set_font_description(desc_name)
-        layout_name.set_text(text_name, -1)
-        w_name, h_name = layout_name.get_pixel_size()
+        text_pct = text_pct.replace("{vol}", str(vol_pct))
         
-        y_name = int(height * 0.05)
-        if align_name == "left": x_name = int(width * 0.1)
-        elif align_name == "right": x_name = int(width * 0.9 - w_name)
-        else: x_name = int((width - w_name) / 2)
-
-        if out_width_name > 0:
-            ctx.move_to(x_name, y_name)
-            PangoCairo.layout_path(ctx, layout_name)
-            ctx.set_source_rgba(*c_out_name)
-            ctx.set_line_width(out_width_name * 2) # Doble de grosor porque el trazo se centra en el path
-            ctx.set_line_join(cairo.LINE_JOIN_ROUND)
-            ctx.stroke()
+        draw_text_section("pct", text_pct, int(height * 0.28))
         
-        ctx.set_source_rgba(*c_name)
-        ctx.move_to(x_name, y_name)
-        PangoCairo.show_layout(ctx, layout_name)
-
-        # --- 2. Dibujar Volumen % (Centro superior) ---
-        layout_pct = PangoCairo.create_layout(ctx)
-        layout_pct.set_font_description(desc_pct)
-        layout_pct.set_text(text_pct, -1)
-        
-        w_pango, h_pango = layout_pct.get_pixel_size()
-        y_pct = int(height * 0.25)
-        if align_pct == "left": x_pct = int(width * 0.1)
-        elif align_pct == "right": x_pct = int(width * 0.9 - w_pango)
-        else: x_pct = int((width - w_pango) / 2)
-
-        if out_width_pct > 0:
-            ctx.move_to(x_pct, y_pct)
-            PangoCairo.layout_path(ctx, layout_pct)
-            ctx.set_source_rgba(*c_out_pct)
-            ctx.set_line_width(out_width_pct * 2)
-            ctx.set_line_join(cairo.LINE_JOIN_ROUND)
-            ctx.stroke()
-
-        ctx.set_source_rgba(*c_pct)
-        ctx.move_to(x_pct, y_pct)
-        PangoCairo.show_layout(ctx, layout_pct)
-
         # --- 3. Dibujar Icono (Centro Inferior) ---
         icon_str = "🔇" if is_muted else "🔊"
         if settings.get("device_type", "sink") == "source":
             icon_str = "🛑" if is_muted else "🎙️"
             
         layout_icon = PangoCairo.create_layout(ctx)
-        layout_icon.set_font_description(desc_pct)
+        layout_icon.set_font_description(Pango.FontDescription.from_string(def_font_desc))
         layout_icon.set_text(icon_str, -1)
         
         w_icon, h_icon = layout_icon.get_pixel_size()

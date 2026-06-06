@@ -476,7 +476,7 @@ class PipeWireAudio(ActionBase):
                          self.last_state["muted"] != is_muted or 
                          self.last_state["device"] != device.name)
                          
-        if state_changed or (self.is_scrolling and getattr(self, 'scrolled_last_frame', True)):
+        if state_changed:
             self.last_state["vol"] = vol_pct
             self.last_state["muted"] = is_muted
             self.last_state["device"] = device.name
@@ -685,11 +685,7 @@ class PipeWireAudio(ActionBase):
 
         c_bar = parse_color(settings.get("color_bar", "#FFFFFF"))
 
-        any_scrolling = False
-        any_moved = False
-
         def draw_text_section(key_suffix, text, default_y):
-            nonlocal any_scrolling, any_moved
             
             align = settings.get(f"align_{key_suffix}", "right" if key_suffix == "pct" else def_align)
             out_width = int(settings.get(f"outline_width_{key_suffix}", def_out_width))
@@ -703,8 +699,7 @@ class PipeWireAudio(ActionBase):
             layout = PangoCairo.create_layout(ctx)
             layout.set_font_description(desc)
             layout.set_text(text, -1)
-            w_pango, h_pango = layout.get_pixel_size()
-
+            
             custom_x = settings.get(f"pos_x_{key_suffix}", -1)
             custom_y = settings.get(f"pos_y_{key_suffix}", -1)
             custom_w = settings.get(f"width_{key_suffix}", -1)
@@ -713,6 +708,12 @@ class PipeWireAudio(ActionBase):
             
             if custom_w < 0: max_w = width - (padding * 2)
             else: max_w = custom_w
+            
+            # Apply Pango native truncation with "..."
+            layout.set_width(max_w * Pango.SCALE)
+            layout.set_ellipsize(Pango.EllipsizeMode.END)
+            
+            w_pango, h_pango = layout.get_pixel_size()
             
             if custom_x < 0: base_x = padding
             else: base_x = custom_x
@@ -724,45 +725,9 @@ class PipeWireAudio(ActionBase):
                     y_pos = default_y
             else: y_pos = custom_y
 
-            if w_pango > max_w and settings.get("rolling-labels", True):
-                any_scrolling = True
-                start = base_x
-                stop = base_x + max_w - w_pango
-                scroll_wait = 15
-                state = self.scroll_state.get(key_suffix, {"pos": start, "wait": scroll_wait})
-                
-                moved = False
-                if state["pos"] > stop:
-                    if state["wait"] <= 0:
-                        state["pos"] -= 3
-                        moved = True
-                        if state["pos"] <= stop:
-                            state["pos"] = stop
-                            state["wait"] = scroll_wait
-                    else:
-                        state["wait"] -= 1
-                else:
-                    if state["wait"] <= 0:
-                        state["pos"] = start
-                        moved = True
-                        state["wait"] = scroll_wait
-                    else:
-                        state["wait"] -= 1
-                        
-                if moved:
-                    any_moved = True
-                        
-                x = state["pos"]
-                self.scroll_state[key_suffix] = state
-                
-                ctx.save()
-                ctx.rectangle(base_x, 0, max_w, height)
-                ctx.clip()
-            else:
-                if key_suffix in self.scroll_state: del self.scroll_state[key_suffix]
-                if align == "left": x = base_x
-                elif align == "right": x = base_x + max_w - w_pango
-                else: x = base_x + int((max_w - w_pango) / 2)
+            if align == "left": x = base_x
+            elif align == "right": x = base_x + max_w - w_pango
+            else: x = base_x + int((max_w - w_pango) / 2)
             
             if out_width > 0:
                 ctx.move_to(x, y_pos)
@@ -775,9 +740,6 @@ class PipeWireAudio(ActionBase):
             ctx.set_source_rgba(*c_text)
             ctx.move_to(x, y_pos)
             PangoCairo.show_layout(ctx, layout)
-            
-            if w_pango > max_w and settings.get("rolling-labels", True):
-                ctx.restore()
 
         text_name = settings.get("text_name", "")
         if not text_name: text_name = dev_desc
@@ -937,8 +899,6 @@ class PipeWireAudio(ActionBase):
                 
         img = Image.alpha_composite(base_img, cairo_img)
 
-        self.is_scrolling = any_scrolling
-        self.scrolled_last_frame = any_moved
         self.set_media(image=img)
 
     def hex_to_rgba(self, hex_str):

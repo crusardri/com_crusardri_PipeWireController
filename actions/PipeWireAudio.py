@@ -14,6 +14,8 @@ from src.backend.DeckManagement.InputIdentifier import Input
 import pulsectl
 import math
 from PIL import Image, ImageDraw, ImageFont
+import threading
+import time
 
 class CustomLabelRow(Adw.PreferencesRow):
     def __init__(self, title_text, settings_dict, key_prefix, parent_action):
@@ -22,7 +24,6 @@ class CustomLabelRow(Adw.PreferencesRow):
         self.key_prefix = key_prefix
         self.parent = parent_action
 
-        # Defaults
         defaults = gl.settings_manager.font_defaults
         def_color_rgba = Gdk.RGBA()
         def_color = defaults.get("font-color", [255, 255, 255, 255])
@@ -33,6 +34,12 @@ class CustomLabelRow(Adw.PreferencesRow):
 
         def_font_family = defaults.get("font-family", "Sans")
         def_font_size = defaults.get("font-size", 15)
+        def_align = defaults.get("alignment", "center")
+        
+        if key_prefix == "pct":
+            def_font_size = 20
+            def_align = "right"
+            
         def_font_desc_str = f"{def_font_family} {def_font_size}"
 
         def_out_color = defaults.get("outline-color", [0, 0, 0, 255])
@@ -43,17 +50,14 @@ class CustomLabelRow(Adw.PreferencesRow):
         def_out_rgba.alpha = def_out_color[3]/255.0
 
         def_out_width = int(defaults.get("outline-width", 2))
-        def_align = defaults.get("alignment", "center")
         
         self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True,
                                 margin_start=15, margin_end=15, margin_top=15, margin_bottom=15)
         self.set_child(self.main_box)
 
-        # Title
         label = Gtk.Label(label=title_text, xalign=0, margin_bottom=3, css_classes=["bold"])
         self.main_box.append(label)
 
-        # Row 1: Text Entry + Color
         self.text_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
         self.main_box.append(self.text_box)
 
@@ -73,7 +77,6 @@ class CustomLabelRow(Adw.PreferencesRow):
         self.color_btn.connect("color-set", self.on_change)
         self.text_box.append(self.color_btn)
 
-        # Row 2: Font
         self.font_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.font_box)
 
@@ -88,7 +91,6 @@ class CustomLabelRow(Adw.PreferencesRow):
         self.font_btn.connect("font-set", self.on_change)
         self.font_box.append(self.font_btn)
 
-        # Row 3: Alignment
         self.align_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.align_box)
 
@@ -114,11 +116,10 @@ class CustomLabelRow(Adw.PreferencesRow):
         self.align_box.append(self.btn_center)
         self.align_box.append(self.btn_right)
 
-        # Row 4: Outline
         self.out_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.out_box)
 
-        out_width_label = Gtk.Label(label="Ancho del contorno:", xalign=0, hexpand=False, margin_start=2, margin_end=5)
+        out_width_label = Gtk.Label(label="Contorno:", xalign=0, hexpand=False, margin_start=2, margin_end=5)
         self.out_box.append(out_width_label)
 
         val_out_width = self.settings.get(f"outline_width_{key_prefix}", def_out_width)
@@ -127,7 +128,7 @@ class CustomLabelRow(Adw.PreferencesRow):
         self.out_spin.connect("value-changed", self.on_change)
         self.out_box.append(self.out_spin)
 
-        out_color_label = Gtk.Label(label="Color del contorno:", xalign=1, hexpand=True, margin_start=2, margin_end=5)
+        out_color_label = Gtk.Label(label="Color cont.:", xalign=1, hexpand=True, margin_start=2, margin_end=5)
         self.out_box.append(out_color_label)
 
         self.out_color_btn = Gtk.ColorButton()
@@ -139,6 +140,35 @@ class CustomLabelRow(Adw.PreferencesRow):
             self.out_color_btn.set_rgba(def_out_rgba)
         self.out_color_btn.connect("color-set", self.on_change)
         self.out_box.append(self.out_color_btn)
+
+        # X, Y
+        self.xy_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
+        self.main_box.append(self.xy_box)
+        x_lbl = Gtk.Label(label="Pos X:", margin_end=5)
+        self.x_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
+        self.x_spin.set_value(self.settings.get(f"pos_x_{key_prefix}", -1))
+        self.x_spin.connect("value-changed", self.on_change)
+        
+        y_lbl = Gtk.Label(label="Pos Y:", margin_start=10, margin_end=5)
+        self.y_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
+        self.y_spin.set_value(self.settings.get(f"pos_y_{key_prefix}", -1))
+        self.y_spin.connect("value-changed", self.on_change)
+        
+        self.xy_box.append(x_lbl)
+        self.xy_box.append(self.x_spin)
+        self.xy_box.append(y_lbl)
+        self.xy_box.append(self.y_spin)
+        
+        # Width
+        self.w_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
+        self.main_box.append(self.w_box)
+        w_lbl = Gtk.Label(label="Ancho:", margin_end=5)
+        self.w_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
+        self.w_spin.set_value(self.settings.get(f"width_{key_prefix}", -1))
+        self.w_spin.connect("value-changed", self.on_change)
+        self.w_box.append(w_lbl)
+        self.w_box.append(self.w_spin)
+
 
     def on_change(self, *args):
         self.settings[f"text_{self.key_prefix}"] = self.entry.get_text()
@@ -156,11 +186,229 @@ class CustomLabelRow(Adw.PreferencesRow):
 
         self.settings[f"outline_width_{self.key_prefix}"] = int(self.out_spin.get_value())
 
-        out_rgba = self.out_color_btn.get_rgba()
-        self.settings[f"outline_color_{self.key_prefix}"] = f"#{int(out_rgba.red*255):02x}{int(out_rgba.green*255):02x}{int(out_rgba.blue*255):02x}"
+        rgba_out = self.out_color_btn.get_rgba()
+        self.settings[f"outline_color_{self.key_prefix}"] = f"#{int(rgba_out.red*255):02x}{int(rgba_out.green*255):02x}{int(rgba_out.blue*255):02x}"
+        
+        self.settings[f"pos_x_{self.key_prefix}"] = int(self.x_spin.get_value())
+        self.settings[f"pos_y_{self.key_prefix}"] = int(self.y_spin.get_value())
+        self.settings[f"width_{self.key_prefix}"] = int(self.w_spin.get_value())
 
         self.parent.set_settings(self.settings)
         self.parent.last_state["vol"] = -1
+        self.parent.draw_image()
+
+class CustomIconRow(Adw.PreferencesRow):
+    def __init__(self, settings_dict, parent_action):
+        super().__init__()
+        self.settings = settings_dict
+        self.parent = parent_action
+        
+        self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True,
+                                margin_start=15, margin_end=15, margin_top=15, margin_bottom=15)
+        self.set_child(self.main_box)
+        
+        label = Gtk.Label(label="Formato del Icono", xalign=0, margin_bottom=3, css_classes=["bold"])
+        self.main_box.append(label)
+        
+        # Row 1: File Button
+        self.file_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
+        self.main_box.append(self.file_box)
+        
+        self.btn_file = Gtk.Button(label="Seleccionar Imagen")
+        self.btn_file.connect("clicked", self.on_btn_file_clicked)
+        self.file_box.append(self.btn_file)
+        
+        self.btn_clear = Gtk.Button(icon_name="user-trash-symbolic", margin_start=5)
+        self.btn_clear.connect("clicked", self.on_btn_clear_clicked)
+        self.file_box.append(self.btn_clear)
+        
+        self.lbl_file = Gtk.Label(label=self.settings.get("icon_path", "Por defecto (emoji)"), margin_start=10)
+        self.lbl_file.set_ellipsize(Pango.EllipsizeMode.END)
+        self.file_box.append(self.lbl_file)
+        
+        # Row 2: W, H
+        self.wh_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
+        self.main_box.append(self.wh_box)
+        
+        w_lbl = Gtk.Label(label="Ancho:", margin_end=5)
+        self.w_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
+        self.w_spin.set_value(self.settings.get("icon_width", -1))
+        self.w_spin.connect("value-changed", self.on_change)
+        
+        h_lbl = Gtk.Label(label="Alto:", margin_start=10, margin_end=5)
+        self.h_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
+        self.h_spin.set_value(self.settings.get("icon_height", -1))
+        self.h_spin.connect("value-changed", self.on_change)
+        
+        self.wh_box.append(w_lbl)
+        self.wh_box.append(self.w_spin)
+        self.wh_box.append(h_lbl)
+        self.wh_box.append(self.h_spin)
+        
+        # Row 3: X, Y
+        self.xy_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
+        self.main_box.append(self.xy_box)
+        
+        x_lbl = Gtk.Label(label="Pos X:", margin_end=5)
+        self.x_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
+        self.x_spin.set_value(self.settings.get("icon_x", -1))
+        self.x_spin.connect("value-changed", self.on_change)
+        
+        y_lbl = Gtk.Label(label="Pos Y:", margin_start=10, margin_end=5)
+        self.y_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
+        self.y_spin.set_value(self.settings.get("icon_y", -1))
+        self.y_spin.connect("value-changed", self.on_change)
+        
+        self.xy_box.append(x_lbl)
+        self.xy_box.append(self.x_spin)
+        self.xy_box.append(y_lbl)
+        self.xy_box.append(self.y_spin)
+        
+    def on_btn_file_clicked(self, btn):
+        import globals as gl
+        media_path = self.settings.get("icon_path", "")
+        GLib.idle_add(gl.app.let_user_select_asset, media_path, self.on_media_selected)
+        
+    def on_btn_clear_clicked(self, btn):
+        self.settings["icon_path"] = ""
+        self.lbl_file.set_label("Por defecto (emoji)")
+        self.parent.set_settings(self.settings)
+        self.parent.draw_image()
+
+    def on_media_selected(self, path):
+        if path is not None:
+            self.settings["icon_path"] = path
+            self.lbl_file.set_label(path)
+            self.parent.set_settings(self.settings)
+            self.parent.draw_image()
+            
+    def on_change(self, *args):
+        self.settings["icon_width"] = int(self.w_spin.get_value())
+        self.settings["icon_height"] = int(self.h_spin.get_value())
+        self.settings["icon_x"] = int(self.x_spin.get_value())
+        self.settings["icon_y"] = int(self.y_spin.get_value())
+        self.parent.set_settings(self.settings)
+        self.parent.draw_image()
+
+class CustomBarRow(Adw.PreferencesRow):
+    def __init__(self, settings_dict, parent_action):
+        super().__init__()
+        self.settings = settings_dict
+        self.parent = parent_action
+        
+        self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True,
+                                margin_start=15, margin_end=15, margin_top=15, margin_bottom=15)
+        self.set_child(self.main_box)
+        
+        label = Gtk.Label(label="Formato de la Barra", xalign=0, margin_bottom=3, css_classes=["bold"])
+        self.main_box.append(label)
+        
+        # Color Box (Base)
+        self.color_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
+        self.main_box.append(self.color_box)
+        
+        color_lbl = Gtk.Label(label="Color de la barra:", margin_end=5)
+        self.color_box.append(color_lbl)
+        
+        self.color_btn = Gtk.ColorButton()
+        if "bar_color" in self.settings:
+            c = Gdk.RGBA()
+            c.parse(self.settings["bar_color"])
+            self.color_btn.set_rgba(c)
+        else:
+            c = Gdk.RGBA()
+            c.parse("#FFFFFF")
+            self.color_btn.set_rgba(c)
+        self.color_btn.connect("color-set", self.on_change)
+        self.color_box.append(self.color_btn)
+        
+        # Background Color
+        bg_lbl = Gtk.Label(label="Fondo:", margin_start=15, margin_end=5)
+        self.color_box.append(bg_lbl)
+        self.bg_color_btn = Gtk.ColorButton()
+        if "bar_bg_color" in self.settings:
+            c = Gdk.RGBA()
+            c.parse(self.settings["bar_bg_color"])
+            self.bg_color_btn.set_rgba(c)
+        else:
+            c = Gdk.RGBA()
+            c.parse("#424242")
+            self.bg_color_btn.set_rgba(c)
+        self.bg_color_btn.connect("color-set", self.on_change)
+        self.color_box.append(self.bg_color_btn)
+
+        # Over-limit Color
+        over_lbl = Gtk.Label(label=">100%:", margin_start=15, margin_end=5)
+        self.color_box.append(over_lbl)
+        self.over_color_btn = Gtk.ColorButton()
+        if "bar_over_color" in self.settings:
+            c = Gdk.RGBA()
+            c.parse(self.settings["bar_over_color"])
+            self.over_color_btn.set_rgba(c)
+        else:
+            c = Gdk.RGBA()
+            c.parse("#ff4b4b")
+            self.over_color_btn.set_rgba(c)
+        self.over_color_btn.connect("color-set", self.on_change)
+        self.color_box.append(self.over_color_btn)
+
+        # Row W, H
+        self.wh_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
+        self.main_box.append(self.wh_box)
+        w_lbl = Gtk.Label(label="Ancho:", margin_end=5)
+        self.w_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
+        self.w_spin.set_value(self.settings.get("bar_width", -1))
+        self.w_spin.connect("value-changed", self.on_change)
+        h_lbl = Gtk.Label(label="Alto:", margin_start=10, margin_end=5)
+        self.h_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
+        self.h_spin.set_value(self.settings.get("bar_height", -1))
+        self.h_spin.connect("value-changed", self.on_change)
+        self.wh_box.append(w_lbl)
+        self.wh_box.append(self.w_spin)
+        self.wh_box.append(h_lbl)
+        self.wh_box.append(self.h_spin)
+        
+        # Row X, Y, Radius
+        self.xy_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
+        self.main_box.append(self.xy_box)
+        x_lbl = Gtk.Label(label="Pos X:", margin_end=5)
+        self.x_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
+        self.x_spin.set_value(self.settings.get("bar_x", -1))
+        self.x_spin.connect("value-changed", self.on_change)
+        y_lbl = Gtk.Label(label="Pos Y:", margin_start=10, margin_end=5)
+        self.y_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
+        self.y_spin.set_value(self.settings.get("bar_y", -1))
+        self.y_spin.connect("value-changed", self.on_change)
+        rad_lbl = Gtk.Label(label="Radio:", margin_start=10, margin_end=5)
+        self.rad_spin = Gtk.SpinButton.new_with_range(-1, 100, 1)
+        self.rad_spin.set_value(self.settings.get("bar_radius", -1))
+        self.rad_spin.connect("value-changed", self.on_change)
+        self.xy_box.append(x_lbl)
+        self.xy_box.append(self.x_spin)
+        self.xy_box.append(y_lbl)
+        self.xy_box.append(self.y_spin)
+        self.xy_box.append(rad_lbl)
+        self.xy_box.append(self.rad_spin)
+        
+    def on_change(self, *args):
+        rgba = self.color_btn.get_rgba()
+        self.settings["bar_color"] = f"#{int(rgba.red*255):02x}{int(rgba.green*255):02x}{int(rgba.blue*255):02x}"
+        
+        rgba_bg = self.bg_color_btn.get_rgba()
+        self.settings["bar_bg_color"] = f"#{int(rgba_bg.red*255):02x}{int(rgba_bg.green*255):02x}{int(rgba_bg.blue*255):02x}"
+
+        rgba_over = self.over_color_btn.get_rgba()
+        self.settings["bar_over_color"] = f"#{int(rgba_over.red*255):02x}{int(rgba_over.green*255):02x}{int(rgba_over.blue*255):02x}"
+
+        self.settings["bar_width"] = int(self.w_spin.get_value())
+        self.settings["bar_height"] = int(self.h_spin.get_value())
+        self.settings["bar_x"] = int(self.x_spin.get_value())
+        self.settings["bar_y"] = int(self.y_spin.get_value())
+        self.settings["bar_radius"] = int(self.rad_spin.get_value())
+        self.parent.set_settings(self.settings)
+        self.parent.last_state["vol"] = -1
+        self.parent.draw_image()
+
 
 
 class PipeWireAudio(ActionBase):
@@ -207,8 +455,10 @@ class PipeWireAudio(ActionBase):
 
         # Añadir al final de __init__
         self.last_state = {"vol": -1, "muted": None, "device": None}
+        self.scroll_state = {}
+        self.is_scrolling = False
 
-    def on_tick(self):
+    def on_fast_tick(self):
         device = self.get_target_device()
         if not device:
             return
@@ -216,10 +466,11 @@ class PipeWireAudio(ActionBase):
         vol_pct = int(round(self.get_pulse().volume_get_all_chans(device) * 100))
         is_muted = bool(device.mute)
 
-        # Si el volumen o el estado de silencio cambian, actualizamos la imagen
+        # Si el volumen o el estado de silencio cambian, o si hay texto scrolleando, actualizamos la imagen
         if (self.last_state["vol"] != vol_pct or 
             self.last_state["muted"] != is_muted or 
-            self.last_state["device"] != device.name):
+            self.last_state["device"] != device.name or
+            self.is_scrolling):
             
             self.last_state["vol"] = vol_pct
             self.last_state["muted"] = is_muted
@@ -228,7 +479,28 @@ class PipeWireAudio(ActionBase):
             self.draw_image()
 
     def on_ready(self):
+        self.stop_threads = False
+        self.tick_thread = threading.Thread(target=self._fast_tick_loop, daemon=True)
+        self.tick_thread.start()
         self.draw_image()
+
+    def _fast_tick_loop(self):
+        while not self.stop_threads:
+            time.sleep(0.2)
+            try:
+                self.on_fast_tick()
+            except Exception:
+                pass
+
+    def on_remove(self) -> None:
+        self.stop_threads = True
+        if hasattr(super(), "on_remove"):
+            super().on_remove()
+
+    def on_removed_from_cache(self) -> None:
+        self.stop_threads = True
+        if hasattr(super(), "on_removed_from_cache"):
+            super().on_removed_from_cache()
 
     def get_pulse(self):
         return self.plugin_base.pulse
@@ -320,29 +592,19 @@ class PipeWireAudio(ActionBase):
         def parse_color(hex_str):
             hex_str = hex_str.lstrip('#')
             if len(hex_str) == 6:
-                return (int(hex_str[0:2], 16)/255.0, int(hex_str[2:4], 16)/255.0, int(hex_str[4:6], 16)/255.0, 1.0)
+                return tuple(int(hex_str[i:i+2], 16)/255.0 for i in (0, 2, 4)) + (1.0,)
             elif len(hex_str) == 8:
-                return (int(hex_str[0:2], 16)/255.0, int(hex_str[2:4], 16)/255.0, int(hex_str[4:6], 16)/255.0, int(hex_str[6:8], 16)/255.0)
-            return (1.0, 1.0, 1.0, 1.0)
+                return tuple(int(hex_str[i:i+2], 16)/255.0 for i in (0, 2, 4, 6))
+            return (0,0,0,1.0)
 
-        c_name = parse_color(settings.get("color_name", "#FFFFFF"))
-        c_pct = parse_color(settings.get("color_pct", "#FFFFFF"))
-        c_bar = parse_color(settings.get("color_bar", "#FFFFFF"))
-
-        # Obtener el tamaño exacto (1x) del dispositivo para esta tecla/dial
-        width, height = 100, 100 # Valor por defecto seguro
-        
+        # Obtener el tamaño exacto (1x) del dispositivo para esta entrada (Tecla, Dial, etc.)
+        width, height = 100, 100
         try:
-            if type(self.input_ident) == Input.Key:
-                width, height = self.deck_controller.get_key_image_size()
-            elif type(self.input_ident) == Input.Dial:
-                ts_size = self.deck_controller.get_touchscreen_image_size()
-                dial_count = self.deck_controller.deck.dial_count()
-                if dial_count > 0:
-                    width = ts_size[0] // dial_count
-                    height = ts_size[1]
-        except Exception as e:
-            pass # Si falla por alguna razón, usar el tamaño por defecto
+            ctrl_input = self.get_input()
+            if ctrl_input:
+                width, height = ctrl_input.get_image_size()
+        except Exception:
+            pass
             
         # Asegurarnos de que no sean 0 o demasiado pequeños
         width = max(32, width)
@@ -369,12 +631,29 @@ class PipeWireAudio(ActionBase):
         def_font_size = int(defaults.get("font-size", 15))
         def_font_desc = f"{def_font_family} {def_font_size}"
 
-        def draw_text_section(key_suffix, text, y_pos):
-            align = settings.get(f"align_{key_suffix}", def_align)
+        custom_bar_h = settings.get("bar_height", -1)
+        bar_h = custom_bar_h if custom_bar_h >= 0 else max(5, int(height * 0.06))
+        
+        custom_bar_x = settings.get("bar_x", -1)
+        bar_x = custom_bar_x if custom_bar_x >= 0 else int(width * 0.1)
+        
+        custom_bar_y = settings.get("bar_y", -1)
+        bar_y = custom_bar_y if custom_bar_y >= 0 else height - bar_h - int(height * 0.1)
+
+        c_bar = parse_color(settings.get("color_bar", "#FFFFFF"))
+
+        any_scrolling = False
+
+        def draw_text_section(key_suffix, text, default_y):
+            nonlocal any_scrolling
+            
+            align = settings.get(f"align_{key_suffix}", "right" if key_suffix == "pct" else def_align)
             out_width = int(settings.get(f"outline_width_{key_suffix}", def_out_width))
             c_out = parse_color(settings.get(f"outline_color_{key_suffix}", def_out_color))
             c_text = parse_color(settings.get(f"color_{key_suffix}", def_color))
-            curr_font = settings.get(f"font_desc_{key_suffix}", def_font_desc)
+            
+            def_font = f"{def_font_family} 20" if key_suffix == "pct" else def_font_desc
+            curr_font = settings.get(f"font_desc_{key_suffix}", def_font)
             desc = Pango.FontDescription.from_string(curr_font) if curr_font else Pango.FontDescription()
 
             layout = PangoCairo.create_layout(ctx)
@@ -382,9 +661,58 @@ class PipeWireAudio(ActionBase):
             layout.set_text(text, -1)
             w_pango, h_pango = layout.get_pixel_size()
 
-            if align == "left": x = int(width * 0.01)
-            elif align == "right": x = int(width * 0.99 - w_pango)
-            else: x = int((width - w_pango) / 2)
+            custom_x = settings.get(f"pos_x_{key_suffix}", -1)
+            custom_y = settings.get(f"pos_y_{key_suffix}", -1)
+            custom_w = settings.get(f"width_{key_suffix}", -1)
+
+            padding = max(6, int(width * 0.065))
+            
+            if custom_w < 0: max_w = width - (padding * 2)
+            else: max_w = custom_w
+            
+            if custom_x < 0: base_x = padding
+            else: base_x = custom_x
+            
+            if custom_y < 0:
+                if key_suffix == "pct":
+                    y_pos = bar_y - h_pango - 4
+                else:
+                    y_pos = default_y
+            else: y_pos = custom_y
+
+            if w_pango > max_w and settings.get("rolling-labels", True):
+                any_scrolling = True
+                start = base_x
+                stop = base_x + max_w - w_pango
+                scroll_wait = 15
+                state = self.scroll_state.get(key_suffix, {"pos": start, "wait": scroll_wait})
+                
+                if state["pos"] > stop:
+                    if state["wait"] <= 0:
+                        state["pos"] -= 3
+                        if state["pos"] <= stop:
+                            state["pos"] = stop
+                            state["wait"] = scroll_wait
+                    else:
+                        state["wait"] -= 1
+                else:
+                    if state["wait"] <= 0:
+                        state["pos"] = start
+                        state["wait"] = scroll_wait
+                    else:
+                        state["wait"] -= 1
+                        
+                x = state["pos"]
+                self.scroll_state[key_suffix] = state
+                
+                ctx.save()
+                ctx.rectangle(base_x, 0, max_w, height)
+                ctx.clip()
+            else:
+                if key_suffix in self.scroll_state: del self.scroll_state[key_suffix]
+                if align == "left": x = base_x
+                elif align == "right": x = base_x + max_w - w_pango
+                else: x = base_x + int((max_w - w_pango) / 2)
             
             if out_width > 0:
                 ctx.move_to(x, y_pos)
@@ -397,47 +725,84 @@ class PipeWireAudio(ActionBase):
             ctx.set_source_rgba(*c_text)
             ctx.move_to(x, y_pos)
             PangoCairo.show_layout(ctx, layout)
+            
+            if w_pango > max_w and settings.get("rolling-labels", True):
+                ctx.restore()
 
-        # Nombre (arriba, y=3)
         text_name = settings.get("text_name", "")
-        if not text_name:
-            text_name = dev_desc
-            if len(text_name) > 15:
-                text_name = text_name[:13] + "..."
+        if not text_name: text_name = dev_desc
         text_name = text_name.replace("{vol}", str(vol_pct))
-        
         draw_text_section("name", text_name, 3)
 
-        # Porcentaje (un poco más abajo, debajo del nombre)
         text_pct = settings.get("text_pct", "")
-        if not text_pct:
-            text_pct = f"{vol_pct} %"
-        text_pct = text_pct.replace("{vol}", str(vol_pct))
+        if not text_pct: text_pct = f"{vol_pct} %"
         
+        if is_muted:
+            text_pct = "- - %"
+        else:
+            text_pct = text_pct.replace("{vol}", str(vol_pct))
+            
         draw_text_section("pct", text_pct, int(height * 0.28))
         
-        # --- 3. Dibujar Icono (Centro Inferior) ---
-        icon_str = "🔇" if is_muted else "🔊"
-        if settings.get("device_type", "sink") == "source":
-            icon_str = "🛑" if is_muted else "🎙️"
-            
-        layout_icon = PangoCairo.create_layout(ctx)
-        layout_icon.set_font_description(Pango.FontDescription.from_string(def_font_desc))
-        layout_icon.set_text(icon_str, -1)
+        # --- 3. Dibujar Icono ---
+        icon_path = settings.get("icon_path", "")
+        icon_w = settings.get("icon_width", -1)
+        icon_h = settings.get("icon_height", -1)
+        icon_x = settings.get("icon_x", -1)
+        icon_y = settings.get("icon_y", -1)
         
-        w_icon, h_icon = layout_icon.get_pixel_size()
-        ctx.move_to(int((width - w_icon) / 2), int(height * 0.5))
-        PangoCairo.show_layout(ctx, layout_icon)
+        padding = max(6, int(width * 0.065))
+        
+        if icon_w < 0: icon_w = 48
+        if icon_h < 0: icon_h = 48
+        if icon_x < 0: icon_x = bar_x
+        if icon_y < 0: icon_y = bar_y - icon_h - 4
 
-        # --- 4. Dibujar barra de progreso (Abajo) ---
-        bar_x = int(width * 0.1)
-        bar_w = width - (bar_x * 2)
-        bar_h = max(5, int(height * 0.06))
-        bar_y = height - bar_h - int(height * 0.1)
+        if not icon_path or icon_path.strip() == "":
+            import os
+            if settings.get("device_type", "sink") == "source":
+                icon_path = os.path.join(self.plugin_base.PATH, "assets", "mic.svg")
+            else:
+                icon_path = os.path.join(self.plugin_base.PATH, "assets", "speaker.svg")
+
+        if icon_path.lower().endswith(".svg"):
+            try:
+                import gi
+                gi.require_version('Rsvg', '2.0')
+                from gi.repository import Rsvg
+                handle = Rsvg.Handle.new_from_file(icon_path)
+                dimensions = handle.get_dimensions()
+                svg_w, svg_h = dimensions.width, dimensions.height
+                
+                ctx.save()
+                ctx.translate(icon_x, icon_y)
+                if svg_w > 0 and svg_h > 0:
+                    ctx.scale(icon_w / svg_w, icon_h / svg_h)
+                handle.render_cairo(ctx)
+                ctx.restore()
+            except Exception as e:
+                print("Failed to load SVG icon:", e)
+
+        if is_muted:
+            ctx.save()
+            ctx.set_source_rgba(1.0, 0.0, 0.0, 1.0)
+            ctx.set_line_width(max(3, icon_h // 10))
+            ctx.move_to(icon_x, icon_y)
+            ctx.line_to(icon_x + icon_w, icon_y + icon_h)
+            ctx.stroke()
+            ctx.restore()
+
+        c_bar_bg = parse_color(settings.get("bar_bg_color", "#424242"))
+        c_bar_over = parse_color(settings.get("bar_over_color", "#ff4b4b"))
+        limit_val = settings.get("volume_limit", 100)
+
+        # --- 4. Dibujar barra de progreso ---
+        custom_bar_w = settings.get("bar_width", -1)
+        custom_bar_rad = settings.get("bar_radius", -1)
         
-        radius = max(2.0, bar_h / 2.0)
+        bar_w = custom_bar_w if custom_bar_w >= 0 else width - (bar_x * 2)
+        radius = custom_bar_rad if custom_bar_rad >= 0 else max(2.0, bar_h / 2.0)
         
-        # Función auxiliar para dibujar un rectángulo redondeado en Cairo
         def draw_rounded_rect(cr, x, y, w, h, r):
             cr.new_sub_path()
             cr.arc(x + w - r, y + r, r, -math.pi/2, 0)
@@ -446,24 +811,47 @@ class PipeWireAudio(ActionBase):
             cr.arc(x + r, y + r, r, math.pi, 3*math.pi/2)
             cr.close_path()
 
-        # Fondo de la barra (#444444 aproximado = 0.26)
-        ctx.set_source_rgba(0.26, 0.26, 0.26, 1.0)
+        ctx.set_source_rgba(*c_bar_bg)
         draw_rounded_rect(ctx, bar_x, bar_y, bar_w, bar_h, radius)
         ctx.fill()
         
-        # Relleno de la barra
-        fill_w = int(bar_w * (vol_pct / 100.0))
+        fill_pct = min(vol_pct, limit_val) / max(limit_val, 100)
+        fill_w = int(bar_w * fill_pct)
         if fill_w > bar_w: fill_w = bar_w
+        
         if fill_w > 0:
-            ctx.set_source_rgba(*c_bar)
+            ctx.save()
             draw_rounded_rect(ctx, bar_x, bar_y, fill_w, bar_h, radius)
+            ctx.clip()
+            
+            w_100 = int(bar_w * (100.0 / max(limit_val, 100)))
+            
+            ctx.set_source_rgba(*c_bar)
+            ctx.rectangle(bar_x, bar_y, w_100, bar_h)
             ctx.fill()
+            
+            if vol_pct > 100:
+                ctx.set_source_rgba(*c_bar_over)
+                ctx.rectangle(bar_x + w_100, bar_y, bar_w - w_100, bar_h)
+                ctx.fill()
+                
+            ctx.restore()
 
-        # --- 5. Extraer la imagen a PIL ---
-        # El formato ARGB32 de Cairo guarda los bytes en memoria como BGRA en sistemas Little Endian
         buf = surface.get_data()
-        img = Image.frombuffer("RGBA", (width, height), buf.tobytes(), "raw", "BGRA", 0, 1)
+        cairo_img = Image.frombuffer("RGBA", (width, height), buf.tobytes(), "raw", "BGRA", 0, 1)
 
+        base_img = Image.new("RGBA", (width, height), (0,0,0,0))
+        if icon_path and icon_path.strip() != "" and not icon_path.lower().endswith(".svg"):
+            try:
+                user_icon = Image.open(icon_path).convert("RGBA")
+                user_icon = user_icon.resize((icon_w, icon_h), Image.Resampling.LANCZOS)
+                base_img.paste(user_icon, (icon_x, icon_y), user_icon)
+            except Exception as e:
+                print("Failed to load user icon", e)
+                
+        img = Image.alpha_composite(base_img, cairo_img)
+
+        self.is_scrolling = any_scrolling
         self.set_media(image=img)
 
     def hex_to_rgba(self, hex_str):
@@ -507,7 +895,7 @@ class PipeWireAudio(ActionBase):
             self.step_row.connect("notify::value", self.on_step_changed)
 
             self.limit_row = Adw.SpinRow(title=self.plugin_base.lm.get("config.limit.title", "Límite Máximo de Volumen (%)"))
-            self.limit_row.set_adjustment(Gtk.Adjustment(value=settings.get("volume_limit", 100), lower=1, upper=200, step_increment=1))
+            self.limit_row.set_adjustment(Gtk.Adjustment(value=settings.get("volume_limit", 100), lower=1, upper=150, step_increment=1))
             self.limit_row.connect("notify::value", self.on_limit_changed)
             
             self.exp_name = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.format.name.title", "Formato Nombre"))
@@ -520,19 +908,27 @@ class PipeWireAudio(ActionBase):
 
             self.exp_pct = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.format.pct.title", "Formato Porcentaje"))
             try:
-                self.exp_pct.add_row(CustomLabelRow("Centro", settings, "pct", self))
+                self.exp_pct.add_row(CustomLabelRow("Texto Porcentaje", settings, "pct", self))
             except Exception as e:
                 import traceback
                 err_row = Adw.ActionRow(title=f"Error: {e}", subtitle=traceback.format_exc())
                 self.exp_pct.add_row(err_row)
 
-            self.color_bar_row = Adw.ActionRow(title=self.plugin_base.lm.get("config.color.bar.title", "Color de la barra"))
-            self.color_bar_btn = Gtk.ColorButton()
-            rgba_bar = Gdk.RGBA()
-            rgba_bar.parse(settings.get("color_bar", "#FFFFFF"))
-            self.color_bar_btn.set_rgba(rgba_bar)
-            self.color_bar_btn.connect("color-set", self.on_color_bar_changed)
-            self.color_bar_row.add_suffix(self.color_bar_btn)
+            self.exp_icon = Adw.ExpanderRow(title="Formato del Icono")
+            try:
+                self.exp_icon.add_row(CustomIconRow(settings, self))
+            except Exception as e:
+                import traceback
+                err_row = Adw.ActionRow(title=f"Error: {e}", subtitle=traceback.format_exc())
+                self.exp_icon.add_row(err_row)
+                
+            self.exp_bar = Adw.ExpanderRow(title="Formato de la Barra")
+            try:
+                self.exp_bar.add_row(CustomBarRow(settings, self))
+            except Exception as e:
+                import traceback
+                err_row = Adw.ActionRow(title=f"Error: {e}", subtitle=traceback.format_exc())
+                self.exp_bar.add_row(err_row)
 
             return [
                 self.type_row, 
@@ -541,7 +937,8 @@ class PipeWireAudio(ActionBase):
                 self.limit_row, 
                 self.exp_name, 
                 self.exp_pct,
-                self.color_bar_row
+                self.exp_icon,
+                self.exp_bar
             ]
         except Exception as e:
             import traceback

@@ -36,7 +36,7 @@
     "config.bar.color": "Balkenfarbe:",
     "config.bar.background": "Hintergrund:",
     "config.bar.over100": ">100%:",
-    "config.type.application": "Anwendung (Einzeln)",
+    "config.type.application": "Anwendung",
     "config.format.name.title": "Namensformat",
     "config.format.name.top": "Oben",
     "config.format.pct.title": "Prozentformat",

@@ -36,7 +36,7 @@
     "config.bar.color": "Bar Color:",
     "config.bar.background": "Background:",
     "config.bar.over100": ">100%:",
-    "config.type.application": "Application (Single)",
+    "config.type.application": "Application",
     "config.format.name.title": "Name Format",
     "config.format.name.top": "Top",
     "config.format.pct.title": "Percentage Format",

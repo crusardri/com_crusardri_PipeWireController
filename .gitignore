@@ -2,5 +2,4 @@ __pycache__/
 *.py[cod]
 *$py.class
 apply_translations.py
-.gitignore
-.gitignore
+test_sink_inputs.py

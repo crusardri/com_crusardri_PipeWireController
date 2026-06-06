@@ -459,38 +459,42 @@ class PipeWireAudio(ActionBase):
         self.is_scrolling = False
 
     def on_fast_tick(self):
-        device = self.get_target_device()
-        if not device:
+        devs = self.get_target_devices()
+        if not devs:
+            if self.last_state["device"] != "OFFLINE":
+                self.last_state["device"] = "OFFLINE"
+                self.last_state["vol"] = 0
+                self.last_state["muted"] = False
+                self.draw_image()
             return
 
+        device = devs[0]
         vol_pct = int(round(self.get_pulse().volume_get_all_chans(device) * 100))
         is_muted = bool(device.mute)
 
-        # Si el volumen o el estado de silencio cambian, o si hay texto scrolleando, actualizamos la imagen
-        if (self.last_state["vol"] != vol_pct or 
-            self.last_state["muted"] != is_muted or 
-            self.last_state["device"] != device.name or
-            self.is_scrolling):
-            
+        state_changed = (self.last_state["vol"] != vol_pct or 
+                         self.last_state["muted"] != is_muted or 
+                         self.last_state["device"] != device.name)
+                         
+        if state_changed or (self.is_scrolling and getattr(self, 'scrolled_last_frame', True)):
             self.last_state["vol"] = vol_pct
             self.last_state["muted"] = is_muted
             self.last_state["device"] = device.name
-            
             self.draw_image()
 
     def on_ready(self):
         self.stop_threads = False
-        self.tick_thread = threading.Thread(target=self._fast_tick_loop, daemon=True)
-        self.tick_thread.start()
+        GLib.timeout_add(200, self._fast_tick_loop)
         self.draw_image()
 
     def _fast_tick_loop(self):
-        while not self.stop_threads:
-            time.sleep(0.2)
-            try:
-                self.on_fast_tick()
-            except Exception:
-                pass
+        if self.stop_threads:
+            return False
+        try:
+            self.on_fast_tick()
+        except Exception:
+            pass
+        return True
 
     def on_remove(self) -> None:
         self.stop_threads = True
@@ -505,18 +509,43 @@ class PipeWireAudio(ActionBase):
     def get_pulse(self):
         return self.plugin_base.pulse
 
-    def get_target_device(self):
+    def get_target_devices(self):
         settings = self.get_settings()
         device_type = settings.get("device_type", "sink")
         device_name = settings.get("device_name", "default")
         
         pulse = self.get_pulse()
         if not pulse:
-            return None
+            return []
 
         server_info = pulse.server_info()
         
-        if device_type == "sink":
+        if device_type == "application":
+            apps = self.get_active_applications()
+            target_app = None
+            if device_name.startswith("Auto "):
+                try:
+                    idx = int(device_name.split(" ")[1]) - 1
+                    if idx < len(apps):
+                        target_app = apps[idx]
+                except:
+                    pass
+            else:
+                target_app = device_name
+                
+            if not target_app:
+                return []
+                
+            matched = []
+            for src in pulse.sink_input_list():
+                binary = src.proplist.get('application.process.binary')
+                if not binary:
+                    binary = src.proplist.get('application.name')
+                if binary == target_app:
+                    matched.append(src)
+            return matched
+            
+        elif device_type == "sink":
             devices = pulse.sink_list()
             target_name = server_info.default_sink_name if device_name == "default" else device_name
         else:
@@ -525,49 +554,53 @@ class PipeWireAudio(ActionBase):
 
         for dev in devices:
             if dev.name == target_name:
-                return dev
+                return [dev]
         
         # Fallback to default if custom not found
         if len(devices) > 0:
-            return devices[0]
-        return None
+            return [devices[0]]
+        return []
 
     def on_toggle_mute(self, data=None):
-        dev = self.get_target_device()
-        if dev:
+        devs = self.get_target_devices()
+        for dev in devs:
             self.get_pulse().mute(dev, not dev.mute)
+        if devs:
             self.draw_image()
 
     def on_mute_on(self, data=None):
-        dev = self.get_target_device()
-        if dev and not dev.mute:
-            self.get_pulse().mute(dev, True)
+        devs = self.get_target_devices()
+        for dev in devs:
+            if not dev.mute:
+                self.get_pulse().mute(dev, True)
+        if devs:
             self.draw_image()
 
     def on_mute_off(self, data=None):
-        dev = self.get_target_device()
-        if dev and dev.mute:
-            self.get_pulse().mute(dev, False)
+        devs = self.get_target_devices()
+        for dev in devs:
+            if dev.mute:
+                self.get_pulse().mute(dev, False)
+        if devs:
             self.draw_image()
 
     def change_volume(self, amount):
         settings = self.get_settings()
         limit = float(settings.get("volume_limit", 100)) / 100.0
         
-        dev = self.get_target_device()
-        if not dev:
-            return
-
-        current_vol = round(self.get_pulse().volume_get_all_chans(dev), 2)
-        new_vol = current_vol + amount
-        
-        if new_vol < 0:
-            new_vol = 0.0
-        if new_vol > limit:
-            new_vol = limit
+        devs = self.get_target_devices()
+        for dev in devs:
+            current_vol = round(self.get_pulse().volume_get_all_chans(dev), 2)
+            new_vol = current_vol + amount
             
-        self.get_pulse().volume_set_all_chans(dev, new_vol)
-        self.draw_image()
+            if new_vol < 0:
+                new_vol = 0.0
+            if new_vol > limit:
+                new_vol = limit
+                
+            self.get_pulse().volume_set_all_chans(dev, new_vol)
+        if devs:
+            self.draw_image()
 
     def on_volume_up(self, data=None):
         step = float(self.get_settings().get("volume_step", 5)) / 100.0
@@ -579,14 +612,24 @@ class PipeWireAudio(ActionBase):
 
     def draw_image(self):
         settings = self.get_settings()
-        dev = self.get_target_device()
+        devs = self.get_target_devices()
         
-        if not dev:
+        is_offline = len(devs) == 0
+        if is_offline and settings.get("device_type", "sink") != "application":
             return
-
-        vol_pct = int(round(self.get_pulse().volume_get_all_chans(dev) * 100))
-        is_muted = dev.mute == 1
-        dev_desc = dev.description
+            
+        if not is_offline:
+            dev = devs[0]
+            vol_pct = int(round(self.get_pulse().volume_get_all_chans(dev) * 100))
+            is_muted = dev.mute == 1
+            if hasattr(dev, 'description'):
+                dev_desc = dev.description
+            else:
+                dev_desc = dev.proplist.get('application.process.binary') or dev.proplist.get('application.name') or dev.name
+        else:
+            vol_pct = 0
+            is_muted = False
+            dev_desc = "Offline"
 
         # Función auxiliar de parseo de color HEX a tupla RGBA de 0.0 a 1.0 para Cairo
         def parse_color(hex_str):
@@ -643,9 +686,10 @@ class PipeWireAudio(ActionBase):
         c_bar = parse_color(settings.get("color_bar", "#FFFFFF"))
 
         any_scrolling = False
+        any_moved = False
 
         def draw_text_section(key_suffix, text, default_y):
-            nonlocal any_scrolling
+            nonlocal any_scrolling, any_moved
             
             align = settings.get(f"align_{key_suffix}", "right" if key_suffix == "pct" else def_align)
             out_width = int(settings.get(f"outline_width_{key_suffix}", def_out_width))
@@ -687,9 +731,11 @@ class PipeWireAudio(ActionBase):
                 scroll_wait = 15
                 state = self.scroll_state.get(key_suffix, {"pos": start, "wait": scroll_wait})
                 
+                moved = False
                 if state["pos"] > stop:
                     if state["wait"] <= 0:
                         state["pos"] -= 3
+                        moved = True
                         if state["pos"] <= stop:
                             state["pos"] = stop
                             state["wait"] = scroll_wait
@@ -698,9 +744,13 @@ class PipeWireAudio(ActionBase):
                 else:
                     if state["wait"] <= 0:
                         state["pos"] = start
+                        moved = True
                         state["wait"] = scroll_wait
                     else:
                         state["wait"] -= 1
+                        
+                if moved:
+                    any_moved = True
                         
                 x = state["pos"]
                 self.scroll_state[key_suffix] = state
@@ -760,7 +810,33 @@ class PipeWireAudio(ActionBase):
 
         if not icon_path or icon_path.strip() == "":
             import os
-            if settings.get("device_type", "sink") == "source":
+            dtype = settings.get("device_type", "sink")
+            if dtype == "application":
+                dev_name = settings.get("device_name", "Auto 1")
+                is_auto = dev_name.startswith("Auto ")
+                
+                target_app_icon = None
+                if devs:
+                    target_app_icon = devs[0].proplist.get('application.icon_name') or devs[0].proplist.get('application.process.binary')
+                elif not is_auto:
+                    target_app_icon = dev_name
+                    
+                found_icon = False
+                if target_app_icon:
+                    try:
+                        theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+                        icon_info = theme.lookup_icon(target_app_icon, None, 48, 1, Gtk.TextDirection.NONE, Gtk.IconLookupFlags.NONE)
+                        if icon_info:
+                            found_path = icon_info.get_file().get_path()
+                            if found_path:
+                                icon_path = found_path
+                                found_icon = True
+                    except Exception as e:
+                        print("Failed to look up icon:", e)
+                        
+                if not found_icon:
+                    icon_path = os.path.join(self.plugin_base.PATH, "assets", "speaker.svg")
+            elif dtype == "source":
                 icon_path = os.path.join(self.plugin_base.PATH, "assets", "mic.svg")
             else:
                 icon_path = os.path.join(self.plugin_base.PATH, "assets", "speaker.svg")
@@ -780,6 +856,15 @@ class PipeWireAudio(ActionBase):
                     ctx.scale(icon_w / svg_w, icon_h / svg_h)
                 handle.render_cairo(ctx)
                 ctx.restore()
+                
+                if is_offline:
+                    # Apply grayscale overlay
+                    ctx.save()
+                    ctx.set_operator(cairo.OPERATOR_HSL_COLOR)
+                    ctx.set_source_rgba(0.5, 0.5, 0.5, 1.0)
+                    ctx.rectangle(icon_x, icon_y, icon_w, icon_h)
+                    ctx.fill()
+                    ctx.restore()
             except Exception as e:
                 print("Failed to load SVG icon:", e)
 
@@ -815,14 +900,15 @@ class PipeWireAudio(ActionBase):
         draw_rounded_rect(ctx, bar_x, bar_y, bar_w, bar_h, radius)
         ctx.fill()
         
-        fill_pct = min(vol_pct, limit_val) / max(limit_val, 100)
-        fill_w = int(bar_w * fill_pct)
-        if fill_w > bar_w: fill_w = bar_w
-        
-        if fill_w > 0:
-            ctx.save()
-            draw_rounded_rect(ctx, bar_x, bar_y, fill_w, bar_h, radius)
-            ctx.clip()
+        if not is_offline:
+            fill_pct = min(vol_pct, limit_val) / max(limit_val, 100)
+            fill_w = int(bar_w * fill_pct)
+            if fill_w > bar_w: fill_w = bar_w
+            
+            if fill_w > 0:
+                ctx.save()
+                draw_rounded_rect(ctx, bar_x, bar_y, fill_w, bar_h, radius)
+                ctx.clip()
             
             w_100 = int(bar_w * (100.0 / max(limit_val, 100)))
             
@@ -852,6 +938,7 @@ class PipeWireAudio(ActionBase):
         img = Image.alpha_composite(base_img, cairo_img)
 
         self.is_scrolling = any_scrolling
+        self.scrolled_last_frame = any_moved
         self.set_media(image=img)
 
     def hex_to_rgba(self, hex_str):
@@ -875,12 +962,16 @@ class PipeWireAudio(ActionBase):
             model = Gtk.StringList()
             model.append(self.plugin_base.lm.get("config.type.sink", "Sink (Salida/Altavoces)"))
             model.append(self.plugin_base.lm.get("config.type.source", "Source (Entrada/Micrófono)"))
+            model.append("Application (Aplicación individual)")
             self.type_row.set_model(model)
             
-            if settings.get("device_type", "sink") == "sink":
+            dtype = settings.get("device_type", "sink")
+            if dtype == "sink":
                 self.type_row.set_selected(0)
-            else:
+            elif dtype == "source":
                 self.type_row.set_selected(1)
+            else:
+                self.type_row.set_selected(2)
                 
             self.type_row.connect("notify::selected-item", self.on_type_changed)
 
@@ -945,37 +1036,70 @@ class PipeWireAudio(ActionBase):
             err = Adw.ActionRow(title=f"GLOBAL ERROR: {e}", subtitle=traceback.format_exc()[-100:])
             return [err]
 
+    def get_active_applications(self):
+        pulse = self.get_pulse()
+        if not pulse: return []
+        apps = []
+        seen = set()
+        for src in pulse.sink_input_list():
+            binary = src.proplist.get('application.process.binary')
+            if not binary:
+                binary = src.proplist.get('application.name')
+            if not binary:
+                continue
+            if binary not in seen:
+                seen.add(binary)
+                apps.append(binary)
+        return sorted(apps)
+
     def update_device_model(self):
         settings = self.get_settings()
-        is_sink = settings.get("device_type", "sink") == "sink"
+        device_type = settings.get("device_type", "sink")
         
         pulse = self.get_pulse()
         if not pulse:
             return
             
-        devices = pulse.sink_list() if is_sink else pulse.source_list()
-        
         model = Gtk.StringList()
-        model.append(self.plugin_base.lm.get("config.device.default", "Predeterminado (Defecto del Sistema)"))
+        self.device_mapping = []
         
-        selected_name = settings.get("device_name", "default")
+        if device_type == "application":
+            auto_labels = ["Auto 1", "Auto 2", "Auto 3", "Auto 4"]
+            for a in auto_labels:
+                model.append(a)
+                self.device_mapping.append(a)
+                
+            apps = self.get_active_applications()
+            for app in apps:
+                model.append(app)
+                self.device_mapping.append(app)
+                
+            selected_name = settings.get("device_name", "Auto 1")
+        else:
+            devices = pulse.sink_list() if device_type == "sink" else pulse.source_list()
+            model.append(self.plugin_base.lm.get("config.device.default", "Predeterminado (Defecto del Sistema)"))
+            self.device_mapping.append("default")
+            
+            for dev in devices:
+                model.append(dev.description)
+                self.device_mapping.append(dev.name)
+                
+            selected_name = settings.get("device_name", "default")
+            
         selected_idx = 0
-        
-        for i, dev in enumerate(devices):
-            model.append(dev.description)
-            if dev.name == selected_name:
-                selected_idx = i + 1
-
-        self.device_mapping = ["default"] + [dev.name for dev in devices]
+        if selected_name in self.device_mapping:
+            selected_idx = self.device_mapping.index(selected_name)
+            
         self.device_row.set_model(model)
+        self.device_row.set_selected(selected_idx)
         self.device_row.set_selected(selected_idx)
 
     def on_type_changed(self, combo, pspec):
         settings = self.get_settings()
         idx = combo.get_selected()
-        new_type = "sink" if idx == 0 else "source"
+        new_type = "sink" if idx == 0 else "source" if idx == 1 else "application"
         settings["device_type"] = new_type
-        settings["device_name"] = "default"
+        settings["device_name"] = "default" if new_type != "application" else "Auto 1"
         self.set_settings(settings)
         self.update_device_model()
         self.last_state["vol"] = -1

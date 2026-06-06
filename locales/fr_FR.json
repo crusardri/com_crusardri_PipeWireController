@@ -31,7 +31,7 @@
     "config.size.radius": "Rayon:",
     "config.icon.format": "Format de l'icône",
     "config.icon.select": "Sélectionner l'image",
-    "config.icon.default": "Par défaut (émoji)",
+    "config.icon.default": "Par défaut",
     "config.bar.format": "Format de la barre",
     "config.bar.color": "Couleur de la barre:",
     "config.bar.background": "Fond:",

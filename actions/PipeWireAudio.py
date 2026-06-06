@@ -61,7 +61,7 @@ class CustomLabelRow(Adw.PreferencesRow):
         self.text_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
         self.main_box.append(self.text_box)
 
-        self.entry = Gtk.Entry(hexpand=True, placeholder_text="Texto por defecto")
+        self.entry = Gtk.Entry(hexpand=True, placeholder_text=self.parent.plugin_base.lm.get("config.label.placeholder"))
         if f"text_{key_prefix}" in self.settings:
             self.entry.set_text(self.settings[f"text_{key_prefix}"])
         self.entry.connect("changed", self.on_change)
@@ -80,7 +80,7 @@ class CustomLabelRow(Adw.PreferencesRow):
         self.font_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.font_box)
 
-        font_label = Gtk.Label(label="Fuente:", xalign=0, hexpand=True, margin_start=2)
+        font_label = Gtk.Label(label=self.parent.plugin_base.lm.get("config.font.title"), xalign=0, hexpand=True, margin_start=2)
         self.font_box.append(font_label)
 
         self.font_btn = Gtk.FontButton()
@@ -94,12 +94,12 @@ class CustomLabelRow(Adw.PreferencesRow):
         self.align_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.align_box)
 
-        align_label = Gtk.Label(label="Alineación:", xalign=0, hexpand=True, margin_start=2)
+        align_label = Gtk.Label(label=self.parent.plugin_base.lm.get("config.align.title"), xalign=0, hexpand=True, margin_start=2)
         self.align_box.append(align_label)
 
-        self.btn_left = Gtk.ToggleButton(icon_name="format-justify-left-symbolic", tooltip_text="Izquierda")
-        self.btn_center = Gtk.ToggleButton(icon_name="format-justify-center-symbolic", tooltip_text="Centro")
-        self.btn_right = Gtk.ToggleButton(icon_name="format-justify-right-symbolic", tooltip_text="Derecha")
+        self.btn_left = Gtk.ToggleButton(icon_name="format-justify-left-symbolic", tooltip_text=self.parent.plugin_base.lm.get("config.align.left"))
+        self.btn_center = Gtk.ToggleButton(icon_name="format-justify-center-symbolic", tooltip_text=self.parent.plugin_base.lm.get("config.align.center"))
+        self.btn_right = Gtk.ToggleButton(icon_name="format-justify-right-symbolic", tooltip_text=self.parent.plugin_base.lm.get("config.align.right"))
         self.btn_center.set_group(self.btn_left)
         self.btn_right.set_group(self.btn_left)
 
@@ -119,7 +119,7 @@ class CustomLabelRow(Adw.PreferencesRow):
         self.out_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.out_box)
 
-        out_width_label = Gtk.Label(label="Contorno:", xalign=0, hexpand=False, margin_start=2, margin_end=5)
+        out_width_label = Gtk.Label(label=self.parent.plugin_base.lm.get("config.outline.title"), xalign=0, hexpand=False, margin_start=2, margin_end=5)
         self.out_box.append(out_width_label)
 
         val_out_width = self.settings.get(f"outline_width_{key_prefix}", def_out_width)
@@ -128,7 +128,7 @@ class CustomLabelRow(Adw.PreferencesRow):
         self.out_spin.connect("value-changed", self.on_change)
         self.out_box.append(self.out_spin)
 
-        out_color_label = Gtk.Label(label="Color cont.:", xalign=1, hexpand=True, margin_start=2, margin_end=5)
+        out_color_label = Gtk.Label(label=self.parent.plugin_base.lm.get("config.outline.color"), xalign=1, hexpand=True, margin_start=2, margin_end=5)
         self.out_box.append(out_color_label)
 
         self.out_color_btn = Gtk.ColorButton()
@@ -144,12 +144,12 @@ class CustomLabelRow(Adw.PreferencesRow):
         # X, Y
         self.xy_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.xy_box)
-        x_lbl = Gtk.Label(label="Pos X:", margin_end=5)
+        x_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.pos.x"), margin_end=5)
         self.x_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
         self.x_spin.set_value(self.settings.get(f"pos_x_{key_prefix}", -1))
         self.x_spin.connect("value-changed", self.on_change)
         
-        y_lbl = Gtk.Label(label="Pos Y:", margin_start=10, margin_end=5)
+        y_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.pos.y"), margin_start=10, margin_end=5)
         self.y_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
         self.y_spin.set_value(self.settings.get(f"pos_y_{key_prefix}", -1))
         self.y_spin.connect("value-changed", self.on_change)
@@ -162,7 +162,7 @@ class CustomLabelRow(Adw.PreferencesRow):
         # Width
         self.w_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.w_box)
-        w_lbl = Gtk.Label(label="Ancho:", margin_end=5)
+        w_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.size.width"), margin_end=5)
         self.w_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
         self.w_spin.set_value(self.settings.get(f"width_{key_prefix}", -1))
         self.w_spin.connect("value-changed", self.on_change)
@@ -207,14 +207,14 @@ class CustomIconRow(Adw.PreferencesRow):
                                 margin_start=15, margin_end=15, margin_top=15, margin_bottom=15)
         self.set_child(self.main_box)
         
-        label = Gtk.Label(label="Formato del Icono", xalign=0, margin_bottom=3, css_classes=["bold"])
+        label = Gtk.Label(label=self.parent.plugin_base.lm.get("config.icon.format"), xalign=0, margin_bottom=3, css_classes=["bold"])
         self.main_box.append(label)
         
         # Row 1: File Button
         self.file_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
         self.main_box.append(self.file_box)
         
-        self.btn_file = Gtk.Button(label="Seleccionar Imagen")
+        self.btn_file = Gtk.Button(label=self.parent.plugin_base.lm.get("config.icon.select"))
         self.btn_file.connect("clicked", self.on_btn_file_clicked)
         self.file_box.append(self.btn_file)
         
@@ -222,7 +222,7 @@ class CustomIconRow(Adw.PreferencesRow):
         self.btn_clear.connect("clicked", self.on_btn_clear_clicked)
         self.file_box.append(self.btn_clear)
         
-        self.lbl_file = Gtk.Label(label=self.settings.get("icon_path", "Por defecto (emoji)"), margin_start=10)
+        self.lbl_file = Gtk.Label(label=self.settings.get("icon_path", self.parent.plugin_base.lm.get("config.icon.default")), margin_start=10)
         self.lbl_file.set_ellipsize(Pango.EllipsizeMode.END)
         self.file_box.append(self.lbl_file)
         
@@ -230,12 +230,12 @@ class CustomIconRow(Adw.PreferencesRow):
         self.wh_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.wh_box)
         
-        w_lbl = Gtk.Label(label="Ancho:", margin_end=5)
+        w_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.size.width"), margin_end=5)
         self.w_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
         self.w_spin.set_value(self.settings.get("icon_width", -1))
         self.w_spin.connect("value-changed", self.on_change)
         
-        h_lbl = Gtk.Label(label="Alto:", margin_start=10, margin_end=5)
+        h_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.size.height"), margin_start=10, margin_end=5)
         self.h_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
         self.h_spin.set_value(self.settings.get("icon_height", -1))
         self.h_spin.connect("value-changed", self.on_change)
@@ -249,12 +249,12 @@ class CustomIconRow(Adw.PreferencesRow):
         self.xy_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.xy_box)
         
-        x_lbl = Gtk.Label(label="Pos X:", margin_end=5)
+        x_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.pos.x"), margin_end=5)
         self.x_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
         self.x_spin.set_value(self.settings.get("icon_x", -1))
         self.x_spin.connect("value-changed", self.on_change)
         
-        y_lbl = Gtk.Label(label="Pos Y:", margin_start=10, margin_end=5)
+        y_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.pos.y"), margin_start=10, margin_end=5)
         self.y_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
         self.y_spin.set_value(self.settings.get("icon_y", -1))
         self.y_spin.connect("value-changed", self.on_change)
@@ -271,7 +271,7 @@ class CustomIconRow(Adw.PreferencesRow):
         
     def on_btn_clear_clicked(self, btn):
         self.settings["icon_path"] = ""
-        self.lbl_file.set_label("Por defecto (emoji)")
+        self.lbl_file.set_label(self.parent.plugin_base.lm.get("config.icon.default"))
         self.parent.set_settings(self.settings)
         self.parent.draw_image()
 
@@ -300,14 +300,14 @@ class CustomBarRow(Adw.PreferencesRow):
                                 margin_start=15, margin_end=15, margin_top=15, margin_bottom=15)
         self.set_child(self.main_box)
         
-        label = Gtk.Label(label="Formato de la Barra", xalign=0, margin_bottom=3, css_classes=["bold"])
+        label = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.format"), xalign=0, margin_bottom=3, css_classes=["bold"])
         self.main_box.append(label)
         
         # Color Box (Base)
         self.color_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
         self.main_box.append(self.color_box)
         
-        color_lbl = Gtk.Label(label="Color de la barra:", margin_end=5)
+        color_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.color"), margin_end=5)
         self.color_box.append(color_lbl)
         
         self.color_btn = Gtk.ColorButton()
@@ -323,7 +323,7 @@ class CustomBarRow(Adw.PreferencesRow):
         self.color_box.append(self.color_btn)
         
         # Background Color
-        bg_lbl = Gtk.Label(label="Fondo:", margin_start=15, margin_end=5)
+        bg_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.background"), margin_start=15, margin_end=5)
         self.color_box.append(bg_lbl)
         self.bg_color_btn = Gtk.ColorButton()
         if "bar_bg_color" in self.settings:
@@ -338,7 +338,7 @@ class CustomBarRow(Adw.PreferencesRow):
         self.color_box.append(self.bg_color_btn)
 
         # Over-limit Color
-        over_lbl = Gtk.Label(label=">100%:", margin_start=15, margin_end=5)
+        over_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.over100"), margin_start=15, margin_end=5)
         self.color_box.append(over_lbl)
         self.over_color_btn = Gtk.ColorButton()
         if "bar_over_color" in self.settings:
@@ -355,11 +355,11 @@ class CustomBarRow(Adw.PreferencesRow):
         # Row W, H
         self.wh_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.wh_box)
-        w_lbl = Gtk.Label(label="Ancho:", margin_end=5)
+        w_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.size.width"), margin_end=5)
         self.w_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
         self.w_spin.set_value(self.settings.get("bar_width", -1))
         self.w_spin.connect("value-changed", self.on_change)
-        h_lbl = Gtk.Label(label="Alto:", margin_start=10, margin_end=5)
+        h_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.size.height"), margin_start=10, margin_end=5)
         self.h_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
         self.h_spin.set_value(self.settings.get("bar_height", -1))
         self.h_spin.connect("value-changed", self.on_change)
@@ -371,15 +371,15 @@ class CustomBarRow(Adw.PreferencesRow):
         # Row X, Y, Radius
         self.xy_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.xy_box)
-        x_lbl = Gtk.Label(label="Pos X:", margin_end=5)
+        x_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.pos.x"), margin_end=5)
         self.x_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
         self.x_spin.set_value(self.settings.get("bar_x", -1))
         self.x_spin.connect("value-changed", self.on_change)
-        y_lbl = Gtk.Label(label="Pos Y:", margin_start=10, margin_end=5)
+        y_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.pos.y"), margin_start=10, margin_end=5)
         self.y_spin = Gtk.SpinButton.new_with_range(-1, 2000, 1)
         self.y_spin.set_value(self.settings.get("bar_y", -1))
         self.y_spin.connect("value-changed", self.on_change)
-        rad_lbl = Gtk.Label(label="Radio:", margin_start=10, margin_end=5)
+        rad_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.size.radius"), margin_start=10, margin_end=5)
         self.rad_spin = Gtk.SpinButton.new_with_range(-1, 100, 1)
         self.rad_spin.set_value(self.settings.get("bar_radius", -1))
         self.rad_spin.connect("value-changed", self.on_change)
@@ -523,7 +523,8 @@ class PipeWireAudio(ActionBase):
         if device_type == "application":
             apps = self.get_active_applications()
             target_app = None
-            if device_name.startswith("Auto "):
+            auto_prefix = self.plugin_base.lm.get("config.device.auto") + " "
+            if device_name.startswith(auto_prefix):
                 try:
                     idx = int(device_name.split(" ")[1]) - 1
                     if idx < len(apps):
@@ -629,7 +630,7 @@ class PipeWireAudio(ActionBase):
         else:
             vol_pct = 0
             is_muted = False
-            dev_desc = "Offline"
+            dev_desc = self.plugin_base.lm.get("status.offline")
 
         # Función auxiliar de parseo de color HEX a tupla RGBA de 0.0 a 1.0 para Cairo
         def parse_color(hex_str):
@@ -774,8 +775,9 @@ class PipeWireAudio(ActionBase):
             import os
             dtype = settings.get("device_type", "sink")
             if dtype == "application":
-                dev_name = settings.get("device_name", "Auto 1")
-                is_auto = dev_name.startswith("Auto ")
+                auto_prefix = self.plugin_base.lm.get("config.device.auto") + " "
+                dev_name = settings.get("device_name", auto_prefix + "1")
+                is_auto = dev_name.startswith(auto_prefix)
                 
                 target_app_icon = None
                 if devs:
@@ -920,9 +922,11 @@ class PipeWireAudio(ActionBase):
             
             self.type_row = Adw.ComboRow(title=self.plugin_base.lm.get("config.type.title", "Tipo de dispositivo"))
             model = Gtk.StringList()
-            model.append(self.plugin_base.lm.get("config.type.sink", "Sink (Salida/Altavoces)"))
-            model.append(self.plugin_base.lm.get("config.type.source", "Source (Entrada/Micrófono)"))
-            model.append("Application (Aplicación individual)")
+            if "sink" in device_types:
+                model.append(self.plugin_base.lm.get("config.type.sink", "Output (Sink)"))
+            if "source" in device_types:
+                model.append(self.plugin_base.lm.get("config.type.source", "Input (Source)"))
+            model.append(self.plugin_base.lm.get("config.type.application"))
             self.type_row.set_model(model)
             
             dtype = settings.get("device_type", "sink")
@@ -951,15 +955,15 @@ class PipeWireAudio(ActionBase):
             
             self.exp_name = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.format.name.title", "Formato Nombre"))
             try:
-                self.exp_name.add_row(CustomLabelRow("Arriba", settings, "name", self))
+                self.exp_name.add_row(CustomLabelRow(self.plugin_base.lm.get("config.format.name.top"), settings, "name", self))
             except Exception as e:
                 import traceback
-                err_row = Adw.ActionRow(title=f"Error: {e}", subtitle=traceback.format_exc())
-                self.exp_name.add_row(err_row)
+                self.exp_name = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.format.name.title"))
+                self.exp_name.add_row(CustomLabelRow(self.plugin_base.lm.get("config.format.name.top"), settings, "name", self))
 
-            self.exp_pct = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.format.pct.title", "Formato Porcentaje"))
+            self.exp_pct = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.format.pct.title"))
             try:
-                self.exp_pct.add_row(CustomLabelRow("Texto Porcentaje", settings, "pct", self))
+                self.exp_pct.add_row(CustomLabelRow(self.plugin_base.lm.get("config.format.pct.text"), settings, "pct", self))
             except Exception as e:
                 import traceback
                 err_row = Adw.ActionRow(title=f"Error: {e}", subtitle=traceback.format_exc())
@@ -1024,10 +1028,10 @@ class PipeWireAudio(ActionBase):
         self.device_mapping = []
         
         if device_type == "application":
-            auto_labels = ["Auto 1", "Auto 2", "Auto 3", "Auto 4"]
-            for a in auto_labels:
-                model.append(a)
-                self.device_mapping.append(a)
+            auto_str = self.plugin_base.lm.get("config.device.auto")
+            for i in range(4):
+                model.append(f"{auto_str} {i+1}")
+                self.device_mapping.append(f"Auto {i+1}")
                 
             apps = self.get_active_applications()
             for app in apps:

@@ -1,0 +1,20 @@
+{
+    "version": "1.0.0",
+    "id": "com_crusardri_PipeWireController",
+    "name": "PipeWire Controller",
+    "descriptions": {
+        "en_US": "Manage volume and mute states for PipeWire audio devices.",
+        "es_ES": "Gestiona el volumen y estado de silencio para dispositivos de audio PipeWire.",
+        "fr_FR": "Gérez le volume et les états de sourdine pour les périphériques audio PipeWire.",
+        "de_DE": "Verwalten Sie Lautstärke und Stummschaltung für PipeWire-Audiogeräte."
+    },
+    "short-descriptions": {
+        "en_US": "PipeWire audio control",
+        "es_ES": "Control de audio PipeWire",
+        "fr_FR": "Contrôle audio PipeWire",
+        "de_DE": "PipeWire-Audiosteuerung"
+    },
+    "tags": ["Audio", "Utility", "PipeWire"],
+    "minimum-app-version": "1.0.0",
+    "app-version": "1.4.11-beta"
+}

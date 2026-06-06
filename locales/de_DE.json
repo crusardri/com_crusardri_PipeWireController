@@ -1,0 +1,19 @@
+{
+    "plugin.name": "PipeWire Controller",
+    "actions.pipewire-audio.name": "Audio-Controller",
+    "actions.pipewire-audio.event.toggle-mute": "Stummschaltung umschalten",
+    "actions.pipewire-audio.event.mute-on": "Stummschalten",
+    "actions.pipewire-audio.event.mute-off": "Stummschaltung aufheben",
+    "actions.pipewire-audio.event.volume-up": "Lautstärke erhöhen",
+    "actions.pipewire-audio.event.volume-down": "Lautstärke verringern",
+    "config.device.title": "Gerät",
+    "config.device.default": "Systemstandard",
+    "config.type.title": "Gerätetyp",
+    "config.type.sink": "Ausgang (Sink)",
+    "config.type.source": "Eingang (Source)",
+    "config.step.title": "Lautstärkeschritt (%)",
+    "config.limit.title": "Lautstärkebegrenzung (%)",
+    "config.color.text.title": "Textfarbe",
+    "config.color.bar.title": "Balkenfarbe",
+    "config.color.background.title": "Hintergrundfarbe"
+}

@@ -1,0 +1,19 @@
+{
+    "plugin.name": "PipeWire Controller",
+    "actions.pipewire-audio.name": "Contrôleur Audio",
+    "actions.pipewire-audio.event.toggle-mute": "Basculer la sourdine",
+    "actions.pipewire-audio.event.mute-on": "Activer la sourdine",
+    "actions.pipewire-audio.event.mute-off": "Désactiver la sourdine",
+    "actions.pipewire-audio.event.volume-up": "Augmenter le volume",
+    "actions.pipewire-audio.event.volume-down": "Diminuer le volume",
+    "config.device.title": "Périphérique",
+    "config.device.default": "Par défaut du système",
+    "config.type.title": "Type de Périphérique",
+    "config.type.sink": "Sortie (Sink)",
+    "config.type.source": "Entrée (Source)",
+    "config.step.title": "Étape de Volume (%)",
+    "config.limit.title": "Limite de Volume (%)",
+    "config.color.text.title": "Couleur du Texte",
+    "config.color.bar.title": "Couleur de la Barre",
+    "config.color.background.title": "Couleur de Fond"
+}

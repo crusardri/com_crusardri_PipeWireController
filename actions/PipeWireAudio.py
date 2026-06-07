@@ -16,6 +16,15 @@ import math
 from PIL import Image, ImageDraw, ImageFont
 import threading
 import time
+import os
+import traceback
+
+try:
+    gi.require_version('Rsvg', '2.0')
+    from gi.repository import Rsvg
+    HAS_RSVG = True
+except Exception:
+    HAS_RSVG = False
 
 class CustomLabelRow(Adw.PreferencesRow):
     def __init__(self, title_text, settings_dict, key_prefix, parent_action):
@@ -37,7 +46,7 @@ class CustomLabelRow(Adw.PreferencesRow):
         def_align = defaults.get("alignment", "center")
         
         if key_prefix == "pct":
-            def_font_size = 20
+            def_font_size = 22
             def_align = "right"
             
         def_font_desc_str = f"{def_font_family} {def_font_size}"
@@ -265,7 +274,6 @@ class CustomIconRow(Adw.PreferencesRow):
         self.xy_box.append(self.y_spin)
         
     def on_btn_file_clicked(self, btn):
-        import globals as gl
         media_path = self.settings.get("icon_path", "")
         GLib.idle_add(gl.app.let_user_select_asset, media_path, self.on_media_selected)
         
@@ -455,8 +463,6 @@ class PipeWireAudio(ActionBase):
 
         # Añadir al final de __init__
         self.last_state = {"vol": -1, "muted": None, "device": None}
-        self.scroll_state = {}
-        self.is_scrolling = False
 
     def on_fast_tick(self):
         devs = self.get_target_devices()
@@ -521,15 +527,28 @@ class PipeWireAudio(ActionBase):
         server_info = pulse.server_info()
         
         if device_type == "application":
-            apps = self.get_active_applications()
             target_app = None
             auto_prefix = self.plugin_base.lm.get("config.device.auto") + " "
+            
+            inputs = pulse.sink_input_list()
+            
             if device_name.startswith(auto_prefix):
                 try:
                     idx = int(device_name.split(" ")[1]) - 1
+                    
+                    seen = set()
+                    apps = []
+                    for src in inputs:
+                        binary = src.proplist.get('application.process.binary')
+                        if not binary:
+                            binary = src.proplist.get('application.name')
+                        if binary and binary not in seen:
+                            seen.add(binary)
+                            apps.append(binary)
+                            
                     if idx < len(apps):
                         target_app = apps[idx]
-                except:
+                except (ValueError, IndexError):
                     pass
             else:
                 target_app = device_name
@@ -538,7 +557,7 @@ class PipeWireAudio(ActionBase):
                 return []
                 
             matched = []
-            for src in pulse.sink_input_list():
+            for src in inputs:
                 binary = src.proplist.get('application.process.binary')
                 if not binary:
                     binary = src.proplist.get('application.name')
@@ -611,6 +630,14 @@ class PipeWireAudio(ActionBase):
         step = float(self.get_settings().get("volume_step", 5)) / 100.0
         self.change_volume(-step)
 
+    def _parse_color(self, hex_str):
+        hex_str = hex_str.lstrip('#')
+        if len(hex_str) == 6:
+            return tuple(int(hex_str[i:i+2], 16)/255.0 for i in (0, 2, 4)) + (1.0,)
+        elif len(hex_str) == 8:
+            return tuple(int(hex_str[i:i+2], 16)/255.0 for i in (0, 2, 4, 6))
+        return (0,0,0,1.0)
+
     def draw_image(self):
         settings = self.get_settings()
         devs = self.get_target_devices()
@@ -631,15 +658,6 @@ class PipeWireAudio(ActionBase):
             vol_pct = 0
             is_muted = False
             dev_desc = self.plugin_base.lm.get("status.offline")
-
-        # Función auxiliar de parseo de color HEX a tupla RGBA de 0.0 a 1.0 para Cairo
-        def parse_color(hex_str):
-            hex_str = hex_str.lstrip('#')
-            if len(hex_str) == 6:
-                return tuple(int(hex_str[i:i+2], 16)/255.0 for i in (0, 2, 4)) + (1.0,)
-            elif len(hex_str) == 8:
-                return tuple(int(hex_str[i:i+2], 16)/255.0 for i in (0, 2, 4, 6))
-            return (0,0,0,1.0)
 
         # Obtener el tamaño exacto (1x) del dispositivo para esta entrada (Tecla, Dial, etc.)
         width, height = 100, 100
@@ -684,16 +702,16 @@ class PipeWireAudio(ActionBase):
         custom_bar_y = settings.get("bar_y", -1)
         bar_y = custom_bar_y if custom_bar_y >= 0 else height - bar_h - int(height * 0.1)
 
-        c_bar = parse_color(settings.get("color_bar", "#FFFFFF"))
+        c_bar = self._parse_color(settings.get("color_bar", "#FFFFFF"))
 
         def draw_text_section(key_suffix, text, default_y):
             
             align = settings.get(f"align_{key_suffix}", "right" if key_suffix == "pct" else def_align)
             out_width = int(settings.get(f"outline_width_{key_suffix}", def_out_width))
-            c_out = parse_color(settings.get(f"outline_color_{key_suffix}", def_out_color))
-            c_text = parse_color(settings.get(f"color_{key_suffix}", def_color))
+            c_out = self._parse_color(settings.get(f"outline_color_{key_suffix}", def_out_color))
+            c_text = self._parse_color(settings.get(f"color_{key_suffix}", def_color))
             
-            def_font = f"{def_font_family} 20" if key_suffix == "pct" else def_font_desc
+            def_font = f"{def_font_family} 22" if key_suffix == "pct" else def_font_desc
             curr_font = settings.get(f"font_desc_{key_suffix}", def_font)
             desc = Pango.FontDescription.from_string(curr_font) if curr_font else Pango.FontDescription()
 
@@ -772,7 +790,6 @@ class PipeWireAudio(ActionBase):
         if icon_y < 0: icon_y = bar_y - icon_h - 4
 
         if not icon_path or icon_path.strip() == "":
-            import os
             dtype = settings.get("device_type", "sink")
             if dtype == "application":
                 auto_prefix = self.plugin_base.lm.get("config.device.auto") + " "
@@ -805,11 +822,8 @@ class PipeWireAudio(ActionBase):
             else:
                 icon_path = os.path.join(self.plugin_base.PATH, "assets", "speaker.svg")
 
-        if icon_path.lower().endswith(".svg"):
+        if icon_path.lower().endswith(".svg") and HAS_RSVG:
             try:
-                import gi
-                gi.require_version('Rsvg', '2.0')
-                from gi.repository import Rsvg
                 handle = Rsvg.Handle.new_from_file(icon_path)
                 dimensions = handle.get_dimensions()
                 svg_w, svg_h = dimensions.width, dimensions.height
@@ -841,8 +855,8 @@ class PipeWireAudio(ActionBase):
             ctx.stroke()
             ctx.restore()
 
-        c_bar_bg = parse_color(settings.get("bar_bg_color", "#424242"))
-        c_bar_over = parse_color(settings.get("bar_over_color", "#ff4b4b"))
+        c_bar_bg = self._parse_color(settings.get("bar_bg_color", "#424242"))
+        c_bar_over = self._parse_color(settings.get("bar_over_color", "#ff4b4b"))
         limit_val = settings.get("volume_limit", 100)
 
         # --- 4. Dibujar barra de progreso ---
@@ -903,14 +917,6 @@ class PipeWireAudio(ActionBase):
 
         self.set_media(image=img)
 
-    def hex_to_rgba(self, hex_str):
-        hex_str = hex_str.lstrip('#')
-        if len(hex_str) == 6:
-            return tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4)) + (255,)
-        elif len(hex_str) == 8:
-            return tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4, 6))
-        return (0,0,0,0)
-
     # ----------------------
     # Configuration UI
     # ----------------------
@@ -922,10 +928,8 @@ class PipeWireAudio(ActionBase):
             
             self.type_row = Adw.ComboRow(title=self.plugin_base.lm.get("config.type.title", "Tipo de dispositivo"))
             model = Gtk.StringList()
-            if "sink" in device_types:
-                model.append(self.plugin_base.lm.get("config.type.sink", "Output (Sink)"))
-            if "source" in device_types:
-                model.append(self.plugin_base.lm.get("config.type.source", "Input (Source)"))
+            model.append(self.plugin_base.lm.get("config.type.sink", "Output (Sink)"))
+            model.append(self.plugin_base.lm.get("config.type.source", "Input (Source)"))
             model.append(self.plugin_base.lm.get("config.type.application"))
             self.type_row.set_model(model)
             
@@ -953,19 +957,16 @@ class PipeWireAudio(ActionBase):
             self.limit_row.set_adjustment(Gtk.Adjustment(value=settings.get("volume_limit", 100), lower=1, upper=150, step_increment=1))
             self.limit_row.connect("notify::value", self.on_limit_changed)
             
-            self.exp_name = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.format.name.title", "Formato Nombre"))
+            self.exp_name = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.format.name.title"))
             try:
                 self.exp_name.add_row(CustomLabelRow(self.plugin_base.lm.get("config.format.name.top"), settings, "name", self))
             except Exception as e:
-                import traceback
-                self.exp_name = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.format.name.title"))
                 self.exp_name.add_row(CustomLabelRow(self.plugin_base.lm.get("config.format.name.top"), settings, "name", self))
 
             self.exp_pct = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.format.pct.title"))
             try:
                 self.exp_pct.add_row(CustomLabelRow(self.plugin_base.lm.get("config.format.pct.text"), settings, "pct", self))
             except Exception as e:
-                import traceback
                 err_row = Adw.ActionRow(title=f"Error: {e}", subtitle=traceback.format_exc())
                 self.exp_pct.add_row(err_row)
 
@@ -973,7 +974,6 @@ class PipeWireAudio(ActionBase):
             try:
                 self.exp_icon.add_row(CustomIconRow(settings, self))
             except Exception as e:
-                import traceback
                 err_row = Adw.ActionRow(title=f"Error: {e}", subtitle=traceback.format_exc())
                 self.exp_icon.add_row(err_row)
                 
@@ -981,7 +981,6 @@ class PipeWireAudio(ActionBase):
             try:
                 self.exp_bar.add_row(CustomBarRow(settings, self))
             except Exception as e:
-                import traceback
                 err_row = Adw.ActionRow(title=f"Error: {e}", subtitle=traceback.format_exc())
                 self.exp_bar.add_row(err_row)
 
@@ -996,7 +995,6 @@ class PipeWireAudio(ActionBase):
                 self.exp_bar
             ]
         except Exception as e:
-            import traceback
             err = Adw.ActionRow(title=f"GLOBAL ERROR: {e}", subtitle=traceback.format_exc()[-100:])
             return [err]
 
@@ -1040,7 +1038,10 @@ class PipeWireAudio(ActionBase):
                 
             selected_name = settings.get("device_name", "Auto 1")
         else:
-            devices = pulse.sink_list() if device_type == "sink" else pulse.source_list()
+            if device_type == "sink":
+                devices = pulse.sink_list()
+            else:
+                devices = [d for d in pulse.source_list() if not d.name.endswith(".monitor")]
             model.append(self.plugin_base.lm.get("config.device.default", "Predeterminado (Defecto del Sistema)"))
             self.device_mapping.append("default")
             
@@ -1086,9 +1087,4 @@ class PipeWireAudio(ActionBase):
         settings["volume_limit"] = int(spin.get_value())
         self.set_settings(settings)
 
-    def on_color_bar_changed(self, btn):
-        settings = self.get_settings()
-        rgba = btn.get_rgba()
-        settings["color_bar"] = f"#{int(rgba.red*255):02x}{int(rgba.green*255):02x}{int(rgba.blue*255):02x}"
         self.set_settings(settings)
-        self.last_state["vol"] = -1

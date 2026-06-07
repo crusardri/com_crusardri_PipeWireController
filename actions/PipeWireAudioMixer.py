@@ -297,6 +297,13 @@ class PipeWireAudioMixer(PipeWireActionBase):
             with self.plugin_base.pulse_lock:
                 if dev_a: self.get_pulse().volume_set_all_chans(dev_a, vol_a / 100.0)
                 if dev_b: self.get_pulse().volume_set_all_chans(dev_b, vol_b / 100.0)
+                
+            pct_a = vol_a / limit_a if limit_a > 0 else 0
+            pct_b = vol_b / limit_b if limit_b > 0 else 0
+            if pct_a >= pct_b:
+                self.internal_balance = 50.0 * pct_b
+            else:
+                self.internal_balance = 100.0 - (50.0 * pct_a)
             
         self.draw_image()
 

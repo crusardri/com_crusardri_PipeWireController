@@ -668,12 +668,13 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
         
         items = []
         try:
-            if device_type == "sink":
-                items = pulse.sink_list()
-            elif device_type == "source":
-                items = [d for d in pulse.source_list() if not getattr(d, 'name', '').endswith('.monitor') and not getattr(d, 'description', '').startswith('Monitor of')]
-            else:
-                items = self.parent_action.get_active_applications()
+            with self.parent_action.plugin_base.pulse_lock:
+                if device_type == "sink":
+                    items = pulse.sink_list()
+                elif device_type == "source":
+                    items = [d for d in pulse.source_list() if not getattr(d, 'name', '').endswith('.monitor') and not getattr(d, 'description', '').startswith('Monitor of')]
+                else:
+                    items = self.parent_action.get_active_applications()
         except Exception:
             pass
 
@@ -728,12 +729,13 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
             return
             
         try:
-            if device_type == "sink":
-                items = pulse.sink_list()
-            elif device_type == "source":
-                items = [d for d in pulse.source_list() if not getattr(d, 'name', '').endswith('.monitor') and not getattr(d, 'description', '').startswith('Monitor of')]
-            else:
-                items = self.parent_action.get_active_applications()
+            with self.parent_action.plugin_base.pulse_lock:
+                if device_type == "sink":
+                    items = pulse.sink_list()
+                elif device_type == "source":
+                    items = [d for d in pulse.source_list() if not getattr(d, 'name', '').endswith('.monitor') and not getattr(d, 'description', '').startswith('Monitor of')]
+                else:
+                    items = self.parent_action.get_active_applications()
                 
             if idx - 1 < len(items):
                 if device_type == "application":

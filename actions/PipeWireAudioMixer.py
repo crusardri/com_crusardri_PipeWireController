@@ -50,8 +50,16 @@ class PipeWireAudioMixer(PipeWireActionBase):
 
         self.last_state = {"vol_a": -1, "vol_b": -1, "muted_a": False, "muted_b": False, "dev_a": None, "dev_b": None, "balance": 50.0}
         self.internal_balance = 50.0
+        import time
+        self.last_tick_time = 0
 
     def on_tick(self):
+        import time
+        current_time = time.time()
+        if current_time - getattr(self, 'last_tick_time', 0) < 0.2:
+            return
+        self.last_tick_time = current_time
+
         try:
             dev_a = self.get_target_device("a")
             dev_b = self.get_target_device("b")
@@ -114,59 +122,60 @@ class PipeWireAudioMixer(PipeWireActionBase):
         if not pulse:
             return None
 
-        server_info = pulse.server_info()
-        
-        if device_type == "application":
-            target_app = None
-            auto_prefix = self.plugin_base.lm.get("config.device.auto", "Auto") + " "
+        with self.plugin_base.pulse_lock:
+            server_info = pulse.server_info()
             
-            inputs = pulse.sink_input_list()
-            
-            if device_name.startswith(auto_prefix) or device_name == "Auto":
-                try:
-                    if device_name == "Auto":
-                        idx = settings.get(f"auto_index_{suffix}", 0)
-                    else:
-                        idx = int(device_name.split(" ")[1]) - 1
-                    
-                    seen = set()
-                    apps = []
-                    for src in inputs:
-                        binary = src.proplist.get('application.process.binary') or src.proplist.get('application.name')
-                        if binary and binary not in seen:
-                            seen.add(binary)
-                            apps.append(binary)
-                            
-                    if idx < len(apps):
-                        target_app = apps[idx]
-                except (ValueError, IndexError):
-                    pass
-            else:
-                target_app = device_name
+            if device_type == "application":
+                target_app = None
+                auto_prefix = self.plugin_base.lm.get("config.device.auto", "Auto") + " "
                 
-            if not target_app:
+                inputs = pulse.sink_input_list()
+                
+                if device_name.startswith(auto_prefix) or device_name == "Auto":
+                    try:
+                        if device_name == "Auto":
+                            idx = settings.get(f"auto_index_{suffix}", 0)
+                        else:
+                            idx = int(device_name.split(" ")[1]) - 1
+                        
+                        seen = set()
+                        apps = []
+                        for src in inputs:
+                            binary = src.proplist.get('application.process.binary') or src.proplist.get('application.name')
+                            if binary and binary not in seen:
+                                seen.add(binary)
+                                apps.append(binary)
+                                
+                        if idx < len(apps):
+                            target_app = apps[idx]
+                    except (ValueError, IndexError):
+                        pass
+                else:
+                    target_app = device_name
+                
+                if not target_app:
+                    return None
+                    
+                for src in inputs:
+                    binary = src.proplist.get('application.process.binary') or src.proplist.get('application.name')
+                    if binary == target_app:
+                        return src
                 return None
                 
-            for src in inputs:
-                binary = src.proplist.get('application.process.binary') or src.proplist.get('application.name')
-                if binary == target_app:
-                    return src
-            return None
-            
-        elif device_type == "sink":
-            devices = pulse.sink_list()
-            target_name = server_info.default_sink_name if device_name == "default" else device_name
-        else:
-            devices = pulse.source_list()
-            target_name = server_info.default_source_name if device_name == "default" else device_name
+            elif device_type == "sink":
+                devices = pulse.sink_list()
+                target_name = server_info.default_sink_name if device_name == "default" else device_name
+            else:
+                devices = pulse.source_list()
+                target_name = server_info.default_source_name if device_name == "default" else device_name
 
-        for dev in devices:
-            if dev.name == target_name:
-                return dev
-        
-        if len(devices) > 0:
-            return devices[0]
-        return None
+            for dev in devices:
+                if dev.name == target_name:
+                    return dev
+            
+            if len(devices) > 0:
+                return devices[0]
+            return None
 
     def get_device_friendly_name(self, suffix):
         dev = self.get_target_device(suffix)
@@ -186,18 +195,19 @@ class PipeWireAudioMixer(PipeWireActionBase):
             pulse = self.get_pulse()
             if pulse:
                 try:
-                    server_info = pulse.server_info()
-                    dtype = settings.get(f"device_type_{suffix}", "sink")
-                    if dtype == "sink":
-                        def_name = server_info.default_sink_name
-                        for d in pulse.sink_list():
-                            if d.name == def_name:
-                                return d.description
-                    elif dtype == "source":
-                        def_name = server_info.default_source_name
-                        for d in pulse.source_list():
-                            if d.name == def_name:
-                                return d.description
+                    with self.plugin_base.pulse_lock:
+                        server_info = pulse.server_info()
+                        dtype = settings.get(f"device_type_{suffix}", "sink")
+                        if dtype == "sink":
+                            def_name = server_info.default_sink_name
+                            for d in pulse.sink_list():
+                                if d.name == def_name:
+                                    return d.description
+                        elif dtype == "source":
+                            def_name = server_info.default_source_name
+                            for d in pulse.source_list():
+                                if d.name == def_name:
+                                    return d.description
                 except Exception:
                     pass
             return "Default"
@@ -233,8 +243,10 @@ class PipeWireAudioMixer(PipeWireActionBase):
         dev_b = self.get_target_device("b")
         if dev_a and dev_b and getattr(dev_a, 'index', id(dev_a)) == getattr(dev_b, 'index', id(dev_b)):
             dev_b = None
-        if dev_a: self.get_pulse().mute(dev_a, not dev_a.mute)
-        if dev_b: self.get_pulse().mute(dev_b, not dev_b.mute)
+            
+        with self.plugin_base.pulse_lock:
+            if dev_a: self.get_pulse().mute(dev_a, not dev_a.mute)
+            if dev_b: self.get_pulse().mute(dev_b, not dev_b.mute)
         self.draw_image()
 
     def change_balance(self, amount):
@@ -254,7 +266,8 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 vol_a = int(round(self.get_pulse().volume_get_all_chans(dev_a) * 100))
                 if dev_a.mute: vol_a = 0
                 new_vol_a = max(0.0, min(limit_a, vol_a + amount))
-                self.get_pulse().volume_set_all_chans(dev_a, new_vol_a / 100.0)
+                with self.plugin_base.pulse_lock:
+                    self.get_pulse().volume_set_all_chans(dev_a, new_vol_a / 100.0)
         else:
             vol_a = int(round(self.get_pulse().volume_get_all_chans(dev_a) * 100)) if dev_a else 0
             vol_b = int(round(self.get_pulse().volume_get_all_chans(dev_b) * 100)) if dev_b else 0
@@ -281,8 +294,9 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 if amt_abs > 0:
                     vol_b = max(0.0, vol_b - amt_abs)
                     
-            if dev_a: self.get_pulse().volume_set_all_chans(dev_a, vol_a / 100.0)
-            if dev_b: self.get_pulse().volume_set_all_chans(dev_b, vol_b / 100.0)
+            with self.plugin_base.pulse_lock:
+                if dev_a: self.get_pulse().volume_set_all_chans(dev_a, vol_a / 100.0)
+                if dev_b: self.get_pulse().volume_set_all_chans(dev_b, vol_b / 100.0)
             
         self.draw_image()
 

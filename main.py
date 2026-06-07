@@ -41,3 +41,4 @@ class PipeWireController(PluginBase):
         
         # Connect to pulseaudio/pipewire server with a lock for threading safety
         self.pulse = pulsectl.Pulse("stream-controller-pipewire", threading_lock=True)
+        self.pulse_lock = threading.RLock()

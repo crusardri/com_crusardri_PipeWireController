@@ -26,16 +26,17 @@ class PipeWireActionBase(ActionBase):
         if not pulse: return []
         apps = []
         try:
-            for sink_input in pulse.sink_input_list():
-                if hasattr(sink_input, 'proplist'):
-                    app_name = sink_input.proplist.get('application.process.binary') or sink_input.proplist.get('application.name')
-                    if app_name and app_name not in apps:
-                        apps.append(app_name)
-            for source_output in pulse.source_output_list():
-                if hasattr(source_output, 'proplist'):
-                    app_name = source_output.proplist.get('application.process.binary') or source_output.proplist.get('application.name')
-                    if app_name and app_name not in apps:
-                        apps.append(app_name)
+            with self.plugin_base.pulse_lock:
+                for sink_input in pulse.sink_input_list():
+                    if hasattr(sink_input, 'proplist'):
+                        app_name = sink_input.proplist.get('application.process.binary') or sink_input.proplist.get('application.name')
+                        if app_name and app_name not in apps:
+                            apps.append(app_name)
+                for source_output in pulse.source_output_list():
+                    if hasattr(source_output, 'proplist'):
+                        app_name = source_output.proplist.get('application.process.binary') or source_output.proplist.get('application.name')
+                        if app_name and app_name not in apps:
+                            apps.append(app_name)
         except Exception: pass
         return apps
 

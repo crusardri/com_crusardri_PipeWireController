@@ -49,5 +49,7 @@
     "actions.pipewire-mixer.event.left": "Mixer Gauche (App 1)",
     "config.mixer.device_a": "Périphérique A (Gauche)",
     "config.mixer.device_b": "Périphérique B (Droite)",
-    "config.mixer.default_name": "Mixeur"
+    "config.mixer.default_name": "Mixeur",
+    "config.mixer.dual_mode": "Activer le mixeur",
+    "config.show_icon.title": "Afficher l'icône"
 }

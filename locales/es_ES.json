@@ -49,5 +49,7 @@
     "actions.pipewire-mixer.event.left": "Balance Izquierda (App 1)",
     "config.mixer.device_a": "Dispositivo A (Izquierda)",
     "config.mixer.device_b": "Dispositivo B (Derecha)",
-    "config.mixer.default_name": "Mezclador"
+    "config.mixer.default_name": "Mezclador",
+    "config.mixer.dual_mode": "Habilitar mezclador",
+    "config.show_icon.title": "Mostrar Icono"
 }

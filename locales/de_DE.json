@@ -49,5 +49,7 @@
     "actions.pipewire-mixer.event.left": "Links mischen (App 1)",
     "config.mixer.device_a": "Gerät A (Links)",
     "config.mixer.device_b": "Gerät B (Rechts)",
-    "config.mixer.default_name": "Mixer"
+    "config.mixer.default_name": "Mixer",
+    "config.mixer.dual_mode": "Mixer aktivieren",
+    "config.show_icon.title": "Symbol anzeigen"
 }

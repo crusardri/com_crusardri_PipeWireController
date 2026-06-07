@@ -6,7 +6,6 @@ import pulsectl
 from src.backend.PluginManager.PluginBase import PluginBase
 from src.backend.PluginManager.ActionHolder import ActionHolder
 
-from .actions.PipeWireAudio import PipeWireAudio
 from .actions.PipeWireAudioMixer import PipeWireAudioMixer
 from src.backend.DeckManagement.InputIdentifier import Input
 from src.backend.PluginManager.ActionInputSupport import ActionInputSupport
@@ -15,14 +14,6 @@ class PipeWireController(PluginBase):
     def __init__(self):
         super().__init__()
         self.init_vars()
-
-        self.audio_action_holder = ActionHolder(
-            plugin_base=self,
-            action_base=PipeWireAudio,
-            action_id_suffix="AudioAction",
-            action_name=self.lm.get("actions.pipewire-audio.name")
-        )
-        self.add_action_holder(self.audio_action_holder)
 
         self.mixer_action_holder = ActionHolder(
             plugin_base=self,

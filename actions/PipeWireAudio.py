@@ -659,6 +659,13 @@ class PipeWireAudio(ActionBase):
             is_muted = False
             dev_desc = self.plugin_base.lm.get("status.offline")
 
+        is_key = self.input_ident.input_type == "keys"
+
+        if is_key:
+            self.set_top_label(dev_desc)
+            text_pct = "- - %" if is_muted else f"{vol_pct} %"
+            self.set_bottom_label(text_pct)
+
         # Obtener el tamaño exacto (1x) del dispositivo para esta entrada (Tecla, Dial, etc.)
         width, height = 100, 100
         try:
@@ -760,20 +767,21 @@ class PipeWireAudio(ActionBase):
             ctx.move_to(x, y_pos)
             PangoCairo.show_layout(ctx, layout)
 
-        text_name = settings.get("text_name", "")
-        if not text_name: text_name = dev_desc
-        text_name = text_name.replace("{vol}", str(vol_pct))
-        draw_text_section("name", text_name, 3)
+        if not is_key:
+            text_name = settings.get("text_name", "")
+            if not text_name: text_name = dev_desc
+            text_name = text_name.replace("{vol}", str(vol_pct))
+            draw_text_section("name", text_name, 3)
 
-        text_pct = settings.get("text_pct", "")
-        if not text_pct: text_pct = f"{vol_pct} %"
-        
-        if is_muted:
-            text_pct = "- - %"
-        else:
-            text_pct = text_pct.replace("{vol}", str(vol_pct))
+            text_pct = settings.get("text_pct", "")
+            if not text_pct: text_pct = f"{vol_pct} %"
             
-        draw_text_section("pct", text_pct, int(height * 0.28))
+            if is_muted:
+                text_pct = "- - %"
+            else:
+                text_pct = text_pct.replace("{vol}", str(vol_pct))
+                
+            draw_text_section("pct", text_pct, int(height * 0.28))
         
         # --- 3. Dibujar Icono ---
         icon_path = settings.get("icon_path", "")
@@ -784,10 +792,16 @@ class PipeWireAudio(ActionBase):
         
         padding = max(6, int(width * 0.065))
         
-        if icon_w < 0: icon_w = 48
-        if icon_h < 0: icon_h = 48
-        if icon_x < 0: icon_x = bar_x
-        if icon_y < 0: icon_y = bar_y - icon_h - 4
+        if is_key:
+            icon_w = int(min(width, height) * 0.5)
+            icon_h = icon_w
+            icon_x = (width - icon_w) // 2
+            icon_y = (height - icon_h) // 2
+        else:
+            if icon_w < 0: icon_w = 48
+            if icon_h < 0: icon_h = 48
+            if icon_x < 0: icon_x = bar_x
+            if icon_y < 0: icon_y = bar_y - icon_h - 4
 
         if not icon_path or icon_path.strip() == "":
             dtype = settings.get("device_type", "sink")
@@ -855,51 +869,52 @@ class PipeWireAudio(ActionBase):
             ctx.stroke()
             ctx.restore()
 
-        c_bar_bg = self._parse_color(settings.get("bar_bg_color", "#424242"))
-        c_bar_over = self._parse_color(settings.get("bar_over_color", "#ff4b4b"))
-        limit_val = settings.get("volume_limit", 100)
+        if not is_key:
+            c_bar_bg = self._parse_color(settings.get("bar_bg_color", "#424242"))
+            c_bar_over = self._parse_color(settings.get("bar_over_color", "#ff4b4b"))
+            limit_val = settings.get("volume_limit", 100)
 
-        # --- 4. Dibujar barra de progreso ---
-        custom_bar_w = settings.get("bar_width", -1)
-        custom_bar_rad = settings.get("bar_radius", -1)
-        
-        bar_w = custom_bar_w if custom_bar_w >= 0 else width - (bar_x * 2)
-        radius = custom_bar_rad if custom_bar_rad >= 0 else max(2.0, bar_h / 2.0)
-        
-        def draw_rounded_rect(cr, x, y, w, h, r):
-            cr.new_sub_path()
-            cr.arc(x + w - r, y + r, r, -math.pi/2, 0)
-            cr.arc(x + w - r, y + h - r, r, 0, math.pi/2)
-            cr.arc(x + r, y + h - r, r, math.pi/2, math.pi)
-            cr.arc(x + r, y + r, r, math.pi, 3*math.pi/2)
-            cr.close_path()
+            # --- 4. Dibujar barra de progreso ---
+            custom_bar_w = settings.get("bar_width", -1)
+            custom_bar_rad = settings.get("bar_radius", -1)
+            
+            bar_w = custom_bar_w if custom_bar_w >= 0 else width - (bar_x * 2)
+            radius = custom_bar_rad if custom_bar_rad >= 0 else max(2.0, bar_h / 2.0)
+            
+            def draw_rounded_rect(cr, x, y, w, h, r):
+                cr.new_sub_path()
+                cr.arc(x + w - r, y + r, r, -math.pi/2, 0)
+                cr.arc(x + w - r, y + h - r, r, 0, math.pi/2)
+                cr.arc(x + r, y + h - r, r, math.pi/2, math.pi)
+                cr.arc(x + r, y + r, r, math.pi, 3*math.pi/2)
+                cr.close_path()
 
-        ctx.set_source_rgba(*c_bar_bg)
-        draw_rounded_rect(ctx, bar_x, bar_y, bar_w, bar_h, radius)
-        ctx.fill()
-        
-        if not is_offline:
-            fill_pct = min(vol_pct, limit_val) / max(limit_val, 100)
-            fill_w = int(bar_w * fill_pct)
-            if fill_w > bar_w: fill_w = bar_w
-            
-            if fill_w > 0:
-                ctx.save()
-                draw_rounded_rect(ctx, bar_x, bar_y, fill_w, bar_h, radius)
-                ctx.clip()
-            
-            w_100 = int(bar_w * (100.0 / max(limit_val, 100)))
-            
-            ctx.set_source_rgba(*c_bar)
-            ctx.rectangle(bar_x, bar_y, w_100, bar_h)
+            ctx.set_source_rgba(*c_bar_bg)
+            draw_rounded_rect(ctx, bar_x, bar_y, bar_w, bar_h, radius)
             ctx.fill()
             
-            if vol_pct > 100:
-                ctx.set_source_rgba(*c_bar_over)
-                ctx.rectangle(bar_x + w_100, bar_y, bar_w - w_100, bar_h)
+            if not is_offline:
+                fill_pct = min(vol_pct, limit_val) / max(limit_val, 100)
+                fill_w = int(bar_w * fill_pct)
+                if fill_w > bar_w: fill_w = bar_w
+                
+                if fill_w > 0:
+                    ctx.save()
+                    draw_rounded_rect(ctx, bar_x, bar_y, fill_w, bar_h, radius)
+                    ctx.clip()
+                
+                w_100 = int(bar_w * (100.0 / max(limit_val, 100)))
+                
+                ctx.set_source_rgba(*c_bar)
+                ctx.rectangle(bar_x, bar_y, w_100, bar_h)
                 ctx.fill()
                 
-            ctx.restore()
+                if vol_pct > 100:
+                    ctx.set_source_rgba(*c_bar_over)
+                    ctx.rectangle(bar_x + w_100, bar_y, bar_w - w_100, bar_h)
+                    ctx.fill()
+                    
+                ctx.restore()
 
         buf = surface.get_data()
         cairo_img = Image.frombuffer("RGBA", (width, height), buf.tobytes(), "raw", "BGRA", 0, 1)
@@ -984,16 +999,20 @@ class PipeWireAudio(ActionBase):
                 err_row = Adw.ActionRow(title=f"Error: {e}", subtitle=traceback.format_exc())
                 self.exp_bar.add_row(err_row)
 
-            return [
+            rows = [
                 self.type_row, 
                 self.device_row, 
                 self.step_row, 
-                self.limit_row, 
-                self.exp_name, 
-                self.exp_pct,
-                self.exp_icon,
-                self.exp_bar
+                self.limit_row
             ]
+            if self.input_ident.input_type != "keys":
+                rows.extend([
+                    self.exp_name, 
+                    self.exp_pct,
+                    self.exp_icon,
+                    self.exp_bar
+                ])
+            return rows
         except Exception as e:
             err = Adw.ActionRow(title=f"GLOBAL ERROR: {e}", subtitle=traceback.format_exc()[-100:])
             return [err]

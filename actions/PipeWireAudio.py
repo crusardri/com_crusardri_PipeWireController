@@ -464,43 +464,35 @@ class PipeWireAudio(ActionBase):
         # Añadir al final de __init__
         self.last_state = {"vol": -1, "muted": None, "device": None}
 
-    def on_fast_tick(self):
-        devs = self.get_target_devices()
-        if not devs:
-            if self.last_state["device"] != "OFFLINE":
-                self.last_state["device"] = "OFFLINE"
-                self.last_state["vol"] = 0
-                self.last_state["muted"] = False
-                self.draw_image()
-            return
-
-        device = devs[0]
-        vol_pct = int(round(self.get_pulse().volume_get_all_chans(device) * 100))
-        is_muted = bool(device.mute)
-
-        state_changed = (self.last_state["vol"] != vol_pct or 
-                         self.last_state["muted"] != is_muted or 
-                         self.last_state["device"] != device.name)
-                         
-        if state_changed:
-            self.last_state["vol"] = vol_pct
-            self.last_state["muted"] = is_muted
-            self.last_state["device"] = device.name
-            self.draw_image()
-
-    def on_ready(self):
-        self.stop_threads = False
-        GLib.timeout_add(200, self._fast_tick_loop)
-        self.draw_image()
-
-    def _fast_tick_loop(self):
-        if self.stop_threads:
-            return False
+    def on_tick(self):
         try:
-            self.on_fast_tick()
+            devs = self.get_target_devices()
+            if not devs:
+                if self.last_state["device"] != "OFFLINE":
+                    self.last_state["device"] = "OFFLINE"
+                    self.last_state["vol"] = 0
+                    self.last_state["muted"] = False
+                    self.draw_image()
+                return
+
+            device = devs[0]
+            vol_pct = int(round(self.get_pulse().volume_get_all_chans(device) * 100))
+            is_muted = bool(device.mute)
+
+            state_changed = (self.last_state["vol"] != vol_pct or 
+                             self.last_state["muted"] != is_muted or 
+                             self.last_state["device"] != device.name)
+                             
+            if state_changed:
+                self.last_state["vol"] = vol_pct
+                self.last_state["muted"] = is_muted
+                self.last_state["device"] = device.name
+                self.draw_image()
         except Exception:
             pass
-        return True
+
+    def on_ready(self):
+        self.draw_image()
 
     def on_remove(self) -> None:
         self.stop_threads = True
@@ -532,9 +524,12 @@ class PipeWireAudio(ActionBase):
             
             inputs = pulse.sink_input_list()
             
-            if device_name.startswith(auto_prefix):
+            if device_name.startswith(auto_prefix) or device_name == "Auto":
                 try:
-                    idx = int(device_name.split(" ")[1]) - 1
+                    if device_name == "Auto":
+                        idx = settings.get("auto_index", 0)
+                    else:
+                        idx = int(device_name.split(" ")[1]) - 1
                     
                     seen = set()
                     apps = []
@@ -903,18 +898,18 @@ class PipeWireAudio(ActionBase):
                     draw_rounded_rect(ctx, bar_x, bar_y, fill_w, bar_h, radius)
                     ctx.clip()
                 
-                w_100 = int(bar_w * (100.0 / max(limit_val, 100)))
-                
-                ctx.set_source_rgba(*c_bar)
-                ctx.rectangle(bar_x, bar_y, w_100, bar_h)
-                ctx.fill()
-                
-                if vol_pct > 100:
-                    ctx.set_source_rgba(*c_bar_over)
-                    ctx.rectangle(bar_x + w_100, bar_y, bar_w - w_100, bar_h)
+                    w_100 = int(bar_w * (100.0 / max(limit_val, 100)))
+                    
+                    ctx.set_source_rgba(*c_bar)
+                    ctx.rectangle(bar_x, bar_y, w_100, bar_h)
                     ctx.fill()
                     
-                ctx.restore()
+                    if vol_pct > 100:
+                        ctx.set_source_rgba(*c_bar_over)
+                        ctx.rectangle(bar_x + w_100, bar_y, bar_w - w_100, bar_h)
+                        ctx.fill()
+                        
+                    ctx.restore()
 
         buf = surface.get_data()
         cairo_img = Image.frombuffer("RGBA", (width, height), buf.tobytes(), "raw", "BGRA", 0, 1)
@@ -964,6 +959,16 @@ class PipeWireAudio(ActionBase):
             self.update_device_model()
             self.device_row.connect("notify::selected-item", self.on_device_changed)
 
+            self.auto_index_row = Adw.SpinRow(title=self.plugin_base.lm.get("config.device.auto") + " #")
+            self.auto_index_row.set_adjustment(Gtk.Adjustment(value=settings.get("auto_index", 0), lower=0, upper=100, step_increment=1))
+            self.auto_index_row.connect("notify::value", self.on_auto_index_changed)
+            
+            # Initial visibility
+            if settings.get("device_type", "sink") == "application" and settings.get("device_name", "Auto") == "Auto":
+                self.auto_index_row.set_visible(True)
+            else:
+                self.auto_index_row.set_visible(False)
+
             self.step_row = Adw.SpinRow(title=self.plugin_base.lm.get("config.step.title", "Incremento de Volumen (%)"))
             self.step_row.set_adjustment(Gtk.Adjustment(value=settings.get("volume_step", 5), lower=1, upper=100, step_increment=1))
             self.step_row.connect("notify::value", self.on_step_changed)
@@ -985,14 +990,14 @@ class PipeWireAudio(ActionBase):
                 err_row = Adw.ActionRow(title=f"Error: {e}", subtitle=traceback.format_exc())
                 self.exp_pct.add_row(err_row)
 
-            self.exp_icon = Adw.ExpanderRow(title="Formato del Icono")
+            self.exp_icon = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.icon.format"))
             try:
                 self.exp_icon.add_row(CustomIconRow(settings, self))
             except Exception as e:
                 err_row = Adw.ActionRow(title=f"Error: {e}", subtitle=traceback.format_exc())
                 self.exp_icon.add_row(err_row)
                 
-            self.exp_bar = Adw.ExpanderRow(title="Formato de la Barra")
+            self.exp_bar = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.bar.format"))
             try:
                 self.exp_bar.add_row(CustomBarRow(settings, self))
             except Exception as e:
@@ -1002,6 +1007,7 @@ class PipeWireAudio(ActionBase):
             rows = [
                 self.type_row, 
                 self.device_row, 
+                self.auto_index_row,
                 self.step_row, 
                 self.limit_row
             ]
@@ -1046,16 +1052,15 @@ class PipeWireAudio(ActionBase):
         
         if device_type == "application":
             auto_str = self.plugin_base.lm.get("config.device.auto")
-            for i in range(4):
-                model.append(f"{auto_str} {i+1}")
-                self.device_mapping.append(f"Auto {i+1}")
+            model.append(auto_str)
+            self.device_mapping.append("Auto")
                 
             apps = self.get_active_applications()
             for app in apps:
                 model.append(app)
                 self.device_mapping.append(app)
                 
-            selected_name = settings.get("device_name", "Auto 1")
+            selected_name = settings.get("device_name", "Auto")
         else:
             if device_type == "sink":
                 devices = pulse.sink_list()
@@ -1078,12 +1083,15 @@ class PipeWireAudio(ActionBase):
         self.device_row.set_selected(selected_idx)
         self.device_row.set_selected(selected_idx)
 
+        if hasattr(self, "auto_index_row"):
+            self.auto_index_row.set_visible(selected_name == "Auto" and device_type == "application")
+
     def on_type_changed(self, combo, pspec):
         settings = self.get_settings()
         idx = combo.get_selected()
         new_type = "sink" if idx == 0 else "source" if idx == 1 else "application"
         settings["device_type"] = new_type
-        settings["device_name"] = "default" if new_type != "application" else "Auto 1"
+        settings["device_name"] = "default" if new_type != "application" else "Auto"
         self.set_settings(settings)
         self.update_device_model()
         self.last_state["vol"] = -1
@@ -1094,7 +1102,16 @@ class PipeWireAudio(ActionBase):
         if hasattr(self, 'device_mapping') and idx < len(self.device_mapping):
             settings["device_name"] = self.device_mapping[idx]
             self.set_settings(settings)
+            if hasattr(self, "auto_index_row"):
+                self.auto_index_row.set_visible(self.device_mapping[idx] == "Auto")
             self.last_state["vol"] = -1
+
+    def on_auto_index_changed(self, spin, pspec):
+        settings = self.get_settings()
+        settings["auto_index"] = int(spin.get_value())
+        self.set_settings(settings)
+        self.last_state["vol"] = -1
+        self.draw_image()
 
     def on_step_changed(self, spin, pspec):
         settings = self.get_settings()

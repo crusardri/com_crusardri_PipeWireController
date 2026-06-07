@@ -839,33 +839,39 @@ class PipeWireAudioMixer(ActionBase):
                     icon_path = os.path.join(self.plugin_base.PATH, "assets", "speaker.svg")
                     
             try:
-                if HAS_RSVG and icon_path.endswith('.svg'):
-                    handle = Rsvg.Handle.new_from_file(icon_path)
-                    dim = handle.get_dimensions()
-                    img_w, img_h = dim.width, dim.height
-                    cairo_surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, img_w, img_h)
-                    c_ctx = cairo.Context(cairo_surface)
-                    handle.render_cairo(c_ctx)
-                    pil_img = Image.frombuffer("RGBA", (img_w, img_h), cairo_surface.get_data(), "raw", "BGRA", 0, 1)
-                else:
-                    pil_img = Image.open(icon_path).convert("RGBA")
-                    
                 i_w = settings.get(f"icon_width_{suffix}", -1)
                 i_h = settings.get(f"icon_height_{suffix}", -1)
                 if i_w < 0 and i_h < 0:
                     i_w = icon_w
                     i_h = icon_h
-                elif i_w < 0: i_w = int(pil_img.width * (i_h / float(pil_img.height)))
-                elif i_h < 0: i_h = int(pil_img.height * (i_w / float(pil_img.width)))
-                
-                pil_img = pil_img.resize((i_w, i_h), Image.Resampling.LANCZOS)
-                
-                surface_data = surface.get_data()
-                base_img = Image.frombuffer("RGBA", (width, height), surface_data, "raw", "BGRA", 0, 1)
-                base_img.alpha_composite(pil_img, (icon_x, icon_y))
-                
-                arr = bytearray(base_img.tobytes("raw", "BGRA"))
-                surface_data[:] = arr
+
+                if HAS_RSVG and icon_path.lower().endswith('.svg'):
+                    handle = Rsvg.Handle.new_from_file(icon_path)
+                    dim = handle.get_dimensions()
+                    svg_w, svg_h = dim.width, dim.height
+                    
+                    if i_w < 0: i_w = int(svg_w * (i_h / float(svg_h))) if svg_h > 0 else icon_w
+                    if i_h < 0: i_h = int(svg_h * (i_w / float(svg_w))) if svg_w > 0 else icon_h
+                    
+                    ctx.save()
+                    ctx.translate(icon_x, icon_y)
+                    if svg_w > 0 and svg_h > 0:
+                        ctx.scale(i_w / svg_w, i_h / svg_h)
+                    handle.render_cairo(ctx)
+                    ctx.restore()
+                else:
+                    pil_img = Image.open(icon_path).convert("RGBA")
+                    if i_w < 0: i_w = int(pil_img.width * (i_h / float(pil_img.height)))
+                    if i_h < 0: i_h = int(pil_img.height * (i_w / float(pil_img.width)))
+                    
+                    pil_img = pil_img.resize((i_w, i_h), Image.Resampling.LANCZOS)
+                    
+                    surface_data = surface.get_data()
+                    base_img = Image.frombuffer("RGBA", (width, height), surface_data, "raw", "BGRA", 0, 1)
+                    base_img.alpha_composite(pil_img, (icon_x, icon_y))
+                    
+                    arr = bytearray(base_img.tobytes("raw", "BGRA"))
+                    surface_data[:] = arr
                 
             except Exception as e:
                 pass

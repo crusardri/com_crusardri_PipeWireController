@@ -244,6 +244,18 @@ class CustomIconRow(Adw.PreferencesRow):
         label = Gtk.Label(label=self.parent.plugin_base.lm.get("config.icon.format"), xalign=0, margin_bottom=3, css_classes=["bold"])
         self.main_box.append(label)
         
+        # Row 0: Show Icon toggle
+        self.toggle_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_bottom=10)
+        lbl_show = Gtk.Label(label=self.parent.plugin_base.lm.get("config.show_icon.title", "Mostrar Icono"), xalign=0, hexpand=True)
+        self.switch_show = Gtk.Switch()
+        self.switch_show.set_valign(Gtk.Align.CENTER)
+        self.switch_show.set_active(self.settings.get(f"show_icon{self.suffix}", True))
+        self.switch_show.connect("notify::active", self.on_show_changed)
+        
+        self.toggle_box.append(lbl_show)
+        self.toggle_box.append(self.switch_show)
+        self.main_box.append(self.toggle_box)
+        
         # Row 1: File Button
         self.file_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
         self.main_box.append(self.file_box)
@@ -258,9 +270,15 @@ class CustomIconRow(Adw.PreferencesRow):
         
         self.lbl_file = Gtk.Label(label=self.settings.get(f"icon_path{self.suffix}", self.parent.plugin_base.lm.get("config.icon.default")), margin_start=10)
         self.lbl_file.set_ellipsize(Pango.EllipsizeMode.END)
+        self.lbl_file.set_max_width_chars(20)
         self.file_box.append(self.lbl_file)
         
-        # Row 2: H
+    def on_show_changed(self, switch, pspec):
+        self.settings[f"show_icon{self.suffix}"] = switch.get_active()
+        self.parent.set_settings(self.settings)
+        self.parent.draw_image()
+
+    def on_btn_file_clicked(self, button):
         self.wh_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.wh_box)
         
@@ -634,13 +652,6 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
         self.limit_row.connect("notify::value", self.on_limit_changed)
         self.add(self.limit_row)
         
-        self.show_icon_row = Adw.SwitchRow(
-            title=lm.get("config.show_icon.title", "Mostrar Icono")
-        )
-        self.show_icon_row.set_active(settings.get(f"show_icon{self.suffix_str}", True))
-        self.show_icon_row.connect("notify::active", self.on_show_icon_changed)
-        self.add(self.show_icon_row)
-        
         self.update_device_model()
 
     def update_device_model(self):
@@ -744,11 +755,5 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
     def on_limit_changed(self, spin, pspec):
         settings = self.parent_action.get_settings()
         settings[f"volume_limit{self.suffix_str}"] = min(150.0, spin.get_value())
-        self.parent_action.set_settings(settings)
-        self.parent_action.draw_image()
-
-    def on_show_icon_changed(self, switch, pspec):
-        settings = self.parent_action.get_settings()
-        settings[f"show_icon{self.suffix_str}"] = switch.get_active()
         self.parent_action.set_settings(settings)
         self.parent_action.draw_image()

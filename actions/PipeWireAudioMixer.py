@@ -544,12 +544,49 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 text_name = f"{self.get_device_friendly_name('a')} / {self.get_device_friendly_name('b')}"
         draw_text_section("name", text_name, 3)
 
+        pct_format = int(settings.get("pct_format", 0))
+        val = 0.0
         if is_single_mode:
             v = (self.get_pulse().volume_get_all_chans(dev_a) * 100) if dev_a else 0
             if dev_a and dev_a.mute: v = 0
-            draw_text_section("pct", f"{int(round(v))}%", int(height * 0.28))
+            val = v
         else:
-            draw_text_section("pct", f"{int(round(self.internal_balance))}%", int(height * 0.28))
+            val = self.internal_balance
+            
+        pct_str = ""
+        if pct_format == 0:
+            pct_str = f"{int(round(val))}%"
+        elif pct_format == 1:
+            pan = int(round((val - 50) * 2)) if not is_single_mode else int(round(val))
+            pct_str = f"{pan:+}%" if not is_single_mode else f"{pan}%"
+        elif pct_format == 2:
+            pan = int(round((val - 50) * 2)) if not is_single_mode else int(round(val))
+            pct_str = f"{pan:+}" if not is_single_mode else f"{pan}"
+        elif pct_format == 3:
+            if is_single_mode:
+                pct_str = f"{int(round(val))}"
+            else:
+                if val < 49.5:
+                    pct_str = f"B {int(round(val * 2))}"
+                elif val > 50.5:
+                    pct_str = f"A {int(round((100 - val) * 2))}"
+                else:
+                    pct_str = "A=B"
+        elif pct_format == 4:
+            if is_single_mode:
+                pct_str = f"{int(round(val))}"
+            else:
+                if val < 49.5:
+                    pct_str = f"R{int(round(val * 2))}"
+                elif val > 50.5:
+                    pct_str = f"L{int(round((100 - val) * 2))}"
+                else:
+                    pct_str = "100"
+        elif pct_format == 5:
+            pct_str = ""
+            
+        if pct_format != 5:
+            draw_text_section("pct", pct_str, int(height * 0.28))
 
         # Composite everything
         surface_data = surface.get_data()

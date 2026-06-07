@@ -57,6 +57,18 @@ class CustomLabelRow(Adw.PreferencesRow):
             self.text_box.append(self.entry)
         else:
             self.entry = None
+            self.pct_format_combo = Gtk.ComboBoxText(hexpand=True)
+            self.pct_format_combo.append("0", "Porcentaje (0%, 50%, 100%)")
+            self.pct_format_combo.append("1", "Panorámico Porcentaje (-100%, 0%, +100%)")
+            self.pct_format_combo.append("2", "Panorámico (-100, 0, +100)")
+            self.pct_format_combo.append("3", "Crossfade (A 0, A=B, B 0)")
+            self.pct_format_combo.append("4", "Crossfade B (L0, 100, R0)")
+            self.pct_format_combo.append("5", "Deshabilitado")
+            
+            val = str(self.settings.get("pct_format", 0))
+            self.pct_format_combo.set_active_id(val)
+            self.pct_format_combo.connect("changed", self.on_change)
+            self.text_box.append(self.pct_format_combo)
 
         self.color_btn = Gtk.ColorButton()
         if f"color_{key_prefix}" in self.settings:
@@ -198,6 +210,8 @@ class CustomLabelRow(Adw.PreferencesRow):
         if getattr(self, "_updating", False): return
         if self.entry:
             self.settings[f"text_{self.key_prefix}"] = self.entry.get_text()
+        elif self.key_prefix == "pct" and hasattr(self, "pct_format_combo"):
+            self.settings["pct_format"] = int(self.pct_format_combo.get_active_id() or 0)
 
         rgba = self.color_btn.get_rgba()
         self.settings[f"color_{self.key_prefix}"] = f"#{int(rgba.red*255):02x}{int(rgba.green*255):02x}{int(rgba.blue*255):02x}"
@@ -272,13 +286,6 @@ class CustomIconRow(Adw.PreferencesRow):
         self.lbl_file.set_ellipsize(Pango.EllipsizeMode.END)
         self.lbl_file.set_max_width_chars(20)
         self.file_box.append(self.lbl_file)
-        
-    def on_show_changed(self, switch, pspec):
-        self.settings[f"show_icon{self.suffix}"] = switch.get_active()
-        self.parent.set_settings(self.settings)
-        self.parent.draw_image()
-
-    def on_btn_file_clicked(self, button):
         self.wh_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.wh_box)
         
@@ -382,6 +389,11 @@ class CustomIconRow(Adw.PreferencesRow):
             self.lbl_file.set_label(path)
             self.parent.set_settings(self.settings)
             self.parent.draw_image()
+            
+    def on_show_changed(self, switch, pspec):
+        self.settings[f"show_icon{self.suffix}"] = switch.get_active()
+        self.parent.set_settings(self.settings)
+        self.parent.draw_image()
             
     def on_change(self, *args):
         if getattr(self, "_updating", False): return

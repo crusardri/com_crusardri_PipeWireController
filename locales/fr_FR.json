@@ -42,5 +42,12 @@
     "config.format.pct.title": "Format du pourcentage",
     "config.format.pct.text": "Texte du pourcentage",
     "config.device.auto": "Auto",
-    "status.offline": "Hors ligne"
+    "status.offline": "Hors ligne",
+    "actions.pipewire-mixer.name": "Mélangeur Audio",
+    "actions.pipewire-mixer.event.toggle-mute": "Basculer Muet (Les deux)",
+    "actions.pipewire-mixer.event.right": "Mixer Droite (App 2)",
+    "actions.pipewire-mixer.event.left": "Mixer Gauche (App 1)",
+    "config.mixer.device_a": "Périphérique A (Gauche)",
+    "config.mixer.device_b": "Périphérique B (Droite)",
+    "config.mixer.default_name": "Mixeur"
 }

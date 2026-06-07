@@ -42,5 +42,12 @@
     "config.format.pct.title": "Formato Porcentaje",
     "config.format.pct.text": "Texto Porcentaje",
     "config.device.auto": "Auto",
-    "status.offline": "Desconectado"
+    "status.offline": "Desconectado",
+    "actions.pipewire-mixer.name": "Mezclador de Audio",
+    "actions.pipewire-mixer.event.toggle-mute": "Alternar Silencio (Ambos)",
+    "actions.pipewire-mixer.event.right": "Balance Derecha (App 2)",
+    "actions.pipewire-mixer.event.left": "Balance Izquierda (App 1)",
+    "config.mixer.device_a": "Dispositivo A (Izquierda)",
+    "config.mixer.device_b": "Dispositivo B (Derecha)",
+    "config.mixer.default_name": "Mezclador"
 }

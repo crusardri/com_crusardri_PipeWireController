@@ -42,5 +42,12 @@
     "config.format.pct.title": "Prozentformat",
     "config.format.pct.text": "Prozenttext",
     "config.device.auto": "Auto",
-    "status.offline": "Offline"
+    "status.offline": "Offline",
+    "actions.pipewire-mixer.name": "Audio Mixer",
+    "actions.pipewire-mixer.event.toggle-mute": "Stumm umschalten (Beide)",
+    "actions.pipewire-mixer.event.right": "Rechts mischen (App 2)",
+    "actions.pipewire-mixer.event.left": "Links mischen (App 1)",
+    "config.mixer.device_a": "Gerät A (Links)",
+    "config.mixer.device_b": "Gerät B (Rechts)",
+    "config.mixer.default_name": "Mixer"
 }

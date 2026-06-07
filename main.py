@@ -7,6 +7,9 @@ from src.backend.PluginManager.PluginBase import PluginBase
 from src.backend.PluginManager.ActionHolder import ActionHolder
 
 from .actions.PipeWireAudio import PipeWireAudio
+from .actions.PipeWireAudioMixer import PipeWireAudioMixer
+from src.backend.DeckManagement.InputIdentifier import Input
+from src.backend.PluginManager.ActionInputSupport import ActionInputSupport
 
 class PipeWireController(PluginBase):
     def __init__(self):
@@ -20,6 +23,19 @@ class PipeWireController(PluginBase):
             action_name=self.lm.get("actions.pipewire-audio.name")
         )
         self.add_action_holder(self.audio_action_holder)
+
+        self.mixer_action_holder = ActionHolder(
+            plugin_base=self,
+            action_base=PipeWireAudioMixer,
+            action_id_suffix="AudioMixerAction",
+            action_name=self.lm.get("actions.pipewire-mixer.name", "Audio Mixer"),
+            action_support={
+                Input.Key: ActionInputSupport.UNSUPPORTED,
+                Input.Dial: ActionInputSupport.SUPPORTED,
+                Input.Touchscreen: ActionInputSupport.UNSUPPORTED
+            }
+        )
+        self.add_action_holder(self.mixer_action_holder)
 
         self.register(
             plugin_name=self.lm.get("plugin.name"),

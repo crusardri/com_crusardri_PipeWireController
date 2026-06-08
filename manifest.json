@@ -1,7 +1,8 @@
 {
-    "version": "1.0.0",
+    "version": "0.0.1.Beta",
     "id": "com_crusardri_PipeWireController",
-    "name": "PipeWire Controller",
+    "name": "PipeWire Audio Controller",
+    "thumbnail": "store/Thumbnail.png",
     "descriptions": {
         "en_US": "Manage volume and mute states for PipeWire audio devices.",
         "es_ES": "Gestiona el volumen y estado de silencio para dispositivos de audio PipeWire.",

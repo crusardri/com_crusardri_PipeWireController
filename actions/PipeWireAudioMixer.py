@@ -123,7 +123,9 @@ class PipeWireAudioMixer(PipeWireActionBase):
             return None
             
         device_type = settings.get(f"device_type_{suffix}", "sink")
-        device_name = settings.get(f"device_name_{suffix}", "default")
+        device_name = settings.get(f"device_name_{suffix}")
+        if not device_name:
+            device_name = "Auto" if device_type == "application" else "default"
         
         pulse = self.get_pulse()
         if not pulse:
@@ -197,7 +199,11 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 return dev.name
         
         settings = self.get_settings()
-        name = settings.get(f"device_name_{suffix}", "default")
+        dtype = settings.get(f"device_type_{suffix}", "sink")
+        name = settings.get(f"device_name_{suffix}")
+        if not name:
+            name = "Auto" if dtype == "application" else "default"
+            
         if name == "default":
             pulse = self.get_pulse()
             if pulse:
@@ -848,7 +854,7 @@ class PipeWireAudioMixer(PipeWireActionBase):
         settings["dual_mode"] = switch.get_active()
         self.set_settings(settings)
         
-        self.grp_b.set_visible(switch.get_active())
+        self.exp_dev_b.set_visible(switch.get_active())
         self.exp_icon_b.set_visible(switch.get_active())
         
         self.draw_image()

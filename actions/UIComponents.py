@@ -749,7 +749,13 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
             
         self.device_combo.handler_block_by_func(self.on_device_changed)
         self.device_combo.remove_all()
-        self.device_combo.append("default", self.parent_action.plugin_base.lm.get("config.device.default", "Default"))
+        
+        if device_type == "application":
+            self.device_combo.append("Auto", self.parent_action.plugin_base.lm.get("config.device.auto", "Auto"))
+            default_id = "Auto"
+        else:
+            self.device_combo.append("default", self.parent_action.plugin_base.lm.get("config.device.default", "Default"))
+            default_id = "default"
         
         items = []
         try:
@@ -763,7 +769,7 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
         except Exception:
             pass
 
-        selected_id = "default"
+        selected_id = default_id
         found = False
         
         if device_type == "application":
@@ -781,7 +787,7 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
                     selected_id = name
                     found = True
 
-        if selected_target and not found:
+        if selected_target and not found and selected_target != default_id:
             lm = self.parent_action.plugin_base.lm
             not_available_text = lm.get("config.device.not_available", "Not Available")
             self.device_combo.append(selected_target, f"{selected_target} ({not_available_text})")

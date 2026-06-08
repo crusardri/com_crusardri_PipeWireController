@@ -764,12 +764,14 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
             pass
 
         selected_id = "default"
+        found = False
         
         if device_type == "application":
             for app_name in items:
                 self.device_combo.append(app_name, app_name)
                 if selected_target == app_name:
                     selected_id = app_name
+                    found = True
         else:
             for dev in items:
                 desc = getattr(dev, 'description', getattr(dev, 'name', 'Unknown'))
@@ -777,6 +779,13 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
                 self.device_combo.append(name, desc)
                 if selected_target == name:
                     selected_id = name
+                    found = True
+
+        if selected_target and not found:
+            lm = self.parent_action.plugin_base.lm
+            not_available_text = lm.get("config.device.not_available", "Not Available")
+            self.device_combo.append(selected_target, f"{selected_target} ({not_available_text})")
+            selected_id = selected_target
 
         self.device_combo.set_active_id(selected_id)
         self.device_combo.handler_unblock_by_func(self.on_device_changed)

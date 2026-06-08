@@ -53,6 +53,17 @@ class PipeWireAudioMixer(PipeWireActionBase):
         import time
         self.last_tick_time = 0
 
+    def get_active_devices_and_mode(self):
+        dev_a = self.get_target_device("a")
+        dev_b = self.get_target_device("b")
+        
+        if dev_a is None or dev_b is None:
+            dev_b = None
+        elif getattr(dev_a, 'index', id(dev_a)) == getattr(dev_b, 'index', id(dev_b)):
+            dev_b = None
+            
+        return dev_a, dev_b, dev_b is None
+
     def on_tick(self):
         import time
         current_time = time.time()
@@ -61,11 +72,7 @@ class PipeWireAudioMixer(PipeWireActionBase):
         self.last_tick_time = current_time
 
         try:
-            dev_a = self.get_target_device("a")
-            dev_b = self.get_target_device("b")
-            if dev_a and dev_b and getattr(dev_a, 'index', id(dev_a)) == getattr(dev_b, 'index', id(dev_b)):
-                dev_b = None
-            is_single_mode = dev_b is None
+            dev_a, dev_b, is_single_mode = self.get_active_devices_and_mode()
                 
             vol_a = int(round(self.get_pulse().volume_get_all_chans(dev_a) * 100)) if dev_a else 0
             vol_b = int(round(self.get_pulse().volume_get_all_chans(dev_b) * 100)) if dev_b else 0
@@ -173,7 +180,7 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 if dev.name == target_name:
                     return dev
             
-            if len(devices) > 0:
+            if device_name == "default" and len(devices) > 0:
                 return devices[0]
             return None
 
@@ -239,10 +246,7 @@ class PipeWireAudioMixer(PipeWireActionBase):
             return Image.new("RGBA", (target_h, target_h), (0, 0, 0, 0))
 
     def on_toggle_mute(self, data=None):
-        dev_a = self.get_target_device("a")
-        dev_b = self.get_target_device("b")
-        if dev_a and dev_b and getattr(dev_a, 'index', id(dev_a)) == getattr(dev_b, 'index', id(dev_b)):
-            dev_b = None
+        dev_a, dev_b, is_single_mode = self.get_active_devices_and_mode()
             
         with self.plugin_base.pulse_lock:
             if dev_a: self.get_pulse().mute(dev_a, not dev_a.mute)
@@ -254,12 +258,7 @@ class PipeWireAudioMixer(PipeWireActionBase):
         limit_a = min(150.0, float(settings.get("volume_limit_a", 100)))
         limit_b = min(150.0, float(settings.get("volume_limit_b", 100)))
         
-        dev_a = self.get_target_device("a")
-        dev_b = self.get_target_device("b")
-        if dev_a and dev_b and getattr(dev_a, 'index', id(dev_a)) == getattr(dev_b, 'index', id(dev_b)):
-            dev_b = None
-            
-        is_single_mode = dev_b is None
+        dev_a, dev_b, is_single_mode = self.get_active_devices_and_mode()
         
         if is_single_mode:
             if dev_a:
@@ -317,8 +316,7 @@ class PipeWireAudioMixer(PipeWireActionBase):
 
     def draw_image(self):
         settings = self.get_settings()
-        dev_a = self.get_target_device("a")
-        dev_b = self.get_target_device("b")
+        dev_a, dev_b, is_single_mode = self.get_active_devices_and_mode()
         
         width, height = 100, 100
         try:
@@ -348,8 +346,6 @@ class PipeWireAudioMixer(PipeWireActionBase):
         def_font_family = defaults.get("font-family", "Sans")
         def_font_size = int(defaults.get("font-size", 15))
         def_font_desc = f"{def_font_family} {def_font_size}"
-        
-        is_single_mode = dev_b is None or (dev_a and getattr(dev_a, 'index', id(dev_a)) == getattr(dev_b, 'index', id(dev_b)))
 
         defs = self.get_calculated_defaults(is_single_mode)
 

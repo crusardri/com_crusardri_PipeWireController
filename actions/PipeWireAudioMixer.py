@@ -431,8 +431,16 @@ class PipeWireAudioMixer(PipeWireActionBase):
             ctx.set_source_rgba(*c_bg)
             ctx.fill()
             
-        def draw_fill(start_x, w, rad, color, y_offset):
-            self.draw_rounded_rect(ctx, start_x, y_offset, w, bar_h_each, rad)
+        def draw_fill(start_x, w, rad, color, y_offset, corner_flags=None):
+            if corner_flags is None:
+                tl = tr = br = bl = rad
+            else:
+                tl = rad if corner_flags[0] else 0
+                tr = rad if corner_flags[1] else 0
+                br = rad if corner_flags[2] else 0
+                bl = rad if corner_flags[3] else 0
+                
+            self.draw_rounded_rect_custom(ctx, start_x, y_offset, w, bar_h_each, tl, tr, br, bl)
             ctx.set_source_rgba(*color)
             ctx.fill()
             
@@ -500,20 +508,26 @@ class PipeWireAudioMixer(PipeWireActionBase):
             else:
                 balance = self.internal_balance
                 center_x = bar_x + bar_w / 2.0
+                corner_flags = [True, True, True, True]
                 if balance < 50:
                     pct = (50.0 - balance) / 50.0
                     fill_w = int((bar_w / 2.0) * pct)
                     fill_start_x = int(center_x - fill_w)
                     marker_x = fill_start_x
+                    corner_flags = [True, False, False, True] # Sharp on the right side
                 else:
                     pct = (balance - 50.0) / 50.0
                     fill_w = int((bar_w / 2.0) * pct)
                     fill_start_x = int(center_x)
                     marker_x = int(center_x + fill_w)
+                    corner_flags = [False, True, True, False] # Sharp on the left side
                     
             if fill_w > 0:
                 rad = bar_rad if fill_w > bar_rad * 2 else fill_w / 2
-                draw_fill(fill_start_x, fill_w, rad, c_bar, y_offset)
+                if is_single_mode:
+                    draw_fill(fill_start_x, fill_w, rad, c_bar, y_offset)
+                else:
+                    draw_fill(fill_start_x, fill_w, rad, c_bar, y_offset, corner_flags)
                 
             if over_fill_w > 0:
                 rad = bar_rad if over_fill_w > bar_rad * 2 else over_fill_w / 2
@@ -667,9 +681,9 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 pct_str = f"{int(round(val))}"
             else:
                 if val < 49.5:
-                    pct_str = f"B {int(round(val * 2))}"
+                    pct_str = f"B{int(round(val * 2))}"
                 elif val > 50.5:
-                    pct_str = f"A {int(round((100 - val) * 2))}"
+                    pct_str = f"A{int(round((100 - val) * 2))}"
                 else:
                     pct_str = "A=B"
         elif pct_format == 4:
@@ -779,16 +793,21 @@ class PipeWireAudioMixer(PipeWireActionBase):
         try:
             settings = self.get_settings()
             
-            self.grp_a = DeviceConfigGroup(self, self.plugin_base.lm.get("config.mixer.device_a", "Device A"), suffix="a")
-            self.grp_b = DeviceConfigGroup(self, self.plugin_base.lm.get("config.mixer.device_b", "Device B"), suffix="b")
+            self.exp_dev_a = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.mixer.device_a", "Device A (Left)"))
+            self.grp_a = DeviceConfigGroup(self, suffix="a")
+            self.exp_dev_a.add_row(self.grp_a)
             
-            grp_mode = Adw.PreferencesGroup(title="Mode")
+            self.exp_dev_b = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.mixer.device_b", "Device B (Right)"))
+            self.grp_b = DeviceConfigGroup(self, suffix="b")
+            self.exp_dev_b.add_row(self.grp_b)
+            
+            grp_mode = Adw.PreferencesGroup(title=self.plugin_base.lm.get("config.mode.title", "Mode"))
             self.switch_dual = Adw.SwitchRow(title=self.plugin_base.lm.get("config.mixer.dual_mode", "Habilitar mezclador"))
             self.switch_dual.set_active(settings.get("dual_mode", False))
             self.switch_dual.connect("notify::active", self.on_dual_mode_change)
             grp_mode.add(self.switch_dual)
             
-            grp_misc = Adw.PreferencesGroup(title="Mixer Settings")
+            grp_misc = Adw.PreferencesGroup(title=self.plugin_base.lm.get("config.mixer.settings.title", "Mixer Settings"))
             self.step_row = Adw.SpinRow(title=self.plugin_base.lm.get("config.step.title", "Step (%)"))
             self.step_row.set_adjustment(Gtk.Adjustment(value=settings.get("volume_step", 5), lower=1, upper=100, step_increment=1))
             self.step_row.connect("notify::value", lambda spin, pspec: self.save_setting("volume_step", int(spin.get_value())))
@@ -814,10 +833,10 @@ class PipeWireAudioMixer(PipeWireActionBase):
             self.exp_icon_b.add_row(CustomIconRow(settings, self, "b"))
             grp_misc.add(self.exp_icon_b)
 
-            self.grp_b.set_visible(settings.get("dual_mode", False))
+            self.exp_dev_b.set_visible(settings.get("dual_mode", False))
             self.exp_icon_b.set_visible(settings.get("dual_mode", False))
 
-            return [grp_mode, self.grp_a, self.grp_b, grp_misc]
+            return [grp_mode, self.exp_dev_a, self.exp_dev_b, grp_misc]
         except Exception as e:
             err = Adw.ActionRow(title=f"GLOBAL ERROR: {e}", subtitle=traceback.format_exc()[-100:])
             return [err]

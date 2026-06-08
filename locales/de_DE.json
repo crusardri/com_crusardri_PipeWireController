@@ -58,5 +58,9 @@
     "config.bar.style.2bars": "2 Balken",
     "config.bar.style.1bar": "1 Balken",
     "config.bar.style.1bar_tri": "1 Balken mit Dreieck",
-    "config.bar.style.1bar_line": "1 Balken mit Linie"
+    "config.bar.style.1bar_line": "1 Balken mit Linie",
+    "config.mode.title": "Modus",
+    "config.mixer.settings.title": "Mischer-Einstellungen",
+    "config.auto_index.title": "Auto-Index #",
+    "config.auto_index.subtitle": "0 = deaktiviert. Für Apps verwendet"
 }

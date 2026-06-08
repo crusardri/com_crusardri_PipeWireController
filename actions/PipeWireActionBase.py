@@ -56,11 +56,21 @@ class PipeWireActionBase(ActionBase):
         return (1, 1, 1, 1)
 
     def draw_rounded_rect(self, cr, x, y, w, h, r):
+        self.draw_rounded_rect_custom(cr, x, y, w, h, r, r, r, r)
+
+    def draw_rounded_rect_custom(self, cr, x, y, w, h, tl, tr, br, bl):
         cr.new_sub_path()
-        cr.arc(x + w - r, y + r, r, -1.570796, 0)
-        cr.arc(x + w - r, y + h - r, r, 0, 1.570796)
-        cr.arc(x + r, y + h - r, r, 1.570796, 3.141593)
-        cr.arc(x + r, y + r, r, 3.141593, -1.570796)
+        if tr > 0: cr.arc(x + w - tr, y + tr, tr, -1.570796, 0)
+        else: cr.line_to(x + w, y)
+        
+        if br > 0: cr.arc(x + w - br, y + h - br, br, 0, 1.570796)
+        else: cr.line_to(x + w, y + h)
+        
+        if bl > 0: cr.arc(x + bl, y + h - bl, bl, 1.570796, 3.141593)
+        else: cr.line_to(x, y + h)
+        
+        if tl > 0: cr.arc(x + tl, y + tl, tl, 3.141593, -1.570796)
+        else: cr.line_to(x, y)
         cr.close_path()
 
     def render_svg_to_cairo(self, ctx, icon_path, x, y, target_w, target_h):

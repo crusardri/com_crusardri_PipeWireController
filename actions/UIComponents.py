@@ -680,8 +680,8 @@ class CustomBarRow(Adw.PreferencesRow):
         self.parent.draw_image()
 
 class DeviceConfigGroup(Adw.PreferencesGroup):
-    def __init__(self, parent_action, title, suffix=""):
-        super().__init__(title=title)
+    def __init__(self, parent_action, suffix=""):
+        super().__init__()
         self.parent_action = parent_action
         self.suffix_str = f"_{suffix}" if suffix else ""
         self.suffix = suffix
@@ -689,42 +689,52 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
         lm = self.parent_action.plugin_base.lm
         settings = self.parent_action.get_settings()
         
-        self.type_row = Adw.ComboRow(title=lm.get("config.type.title", "Device Type"))
-        type_model = Gtk.StringList()
-        type_model.append("Sink (Output)")
-        type_model.append("Source (Input)")
-        type_model.append("Application")
-        self.type_row.set_model(type_model)
+        # Type
+        self.type_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10, margin_top=5)
+        type_lbl = Gtk.Label(label=lm.get("config.type.title", "Device Type"), xalign=0, margin_end=10, hexpand=True)
+        self.type_combo = Gtk.ComboBoxText(hexpand=False)
+        self.type_combo.append("sink", lm.get("config.type.sink", "Sink (Output)"))
+        self.type_combo.append("source", lm.get("config.type.source", "Source (Input)"))
+        self.type_combo.append("application", lm.get("config.type.application", "Application"))
         
         device_type = settings.get(f"device_type{self.suffix_str}", "sink")
-        if device_type == "source":
-            self.type_row.set_selected(1)
-        elif device_type == "application":
-            self.type_row.set_selected(2)
-        else:
-            self.type_row.set_selected(0)
-            
-        self.type_row.connect("notify::selected-item", self.on_type_changed)
-        self.add(self.type_row)
+        self.type_combo.set_active_id(device_type)
+        self.type_combo.connect("changed", self.on_type_changed)
         
-        self.device_row = Adw.ComboRow(title=lm.get("config.device.title", "Device"))
-        self.device_row.connect("notify::selected-item", self.on_device_changed)
-        self.add(self.device_row)
+        self.type_box.append(type_lbl)
+        self.type_box.append(self.type_combo)
+        self.add(self.type_box)
         
-        self.auto_index_row = Adw.SpinRow(
-            title=lm.get("config.auto_index.title", "Auto-index #"),
-            subtitle=lm.get("config.auto_index.subtitle", "0 = disabled. Used for apps"),
-            adjustment=Gtk.Adjustment(value=settings.get(f"auto_index{self.suffix_str}", 0), lower=0, upper=10, step_increment=1)
-        )
-        self.auto_index_row.connect("notify::value", self.on_auto_index_changed)
-        self.add(self.auto_index_row)
+        # Device
+        self.device_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10, margin_top=5)
+        device_lbl = Gtk.Label(label=lm.get("config.device.title", "Device"), xalign=0, margin_end=10, hexpand=True)
+        self.device_combo = Gtk.ComboBoxText(hexpand=False)
+        self.device_combo.set_size_request(200, -1)
+        self.device_combo.connect("changed", self.on_device_changed)
+        
+        self.device_box.append(device_lbl)
+        self.device_box.append(self.device_combo)
+        self.add(self.device_box)
+        
+        # Auto-index
+        self.auto_index_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10, margin_top=5)
+        ai_lbl = Gtk.Label(label=lm.get("config.auto_index.title", "Auto-index #"), xalign=0, margin_end=10, hexpand=True)
+        ai_lbl.set_tooltip_text(lm.get("config.auto_index.subtitle", "0 = disabled. Used for apps"))
+        self.outline_spin = Gtk.SpinButton(adjustment=Gtk.Adjustment(value=settings.get("bar_out_width", 1), lower=0, upper=10, step_increment=1))
+        self.auto_index_spin = Gtk.SpinButton(adjustment=Gtk.Adjustment(value=settings.get(f"auto_index{self.suffix_str}", 0), lower=0, upper=10, step_increment=1))
+        self.auto_index_spin.connect("value-changed", self.on_auto_index_changed)
+        self.auto_index_box.append(ai_lbl)
+        self.auto_index_box.append(self.auto_index_spin)
+        self.add(self.auto_index_box)
 
-        self.limit_row = Adw.SpinRow(
-            title=lm.get("config.volume_limit.title", "Volume Limit (%)"),
-            adjustment=Gtk.Adjustment(value=min(150.0, float(settings.get(f"volume_limit{self.suffix_str}", 100))), lower=0, upper=150, step_increment=5)
-        )
-        self.limit_row.connect("notify::value", self.on_limit_changed)
-        self.add(self.limit_row)
+        # Limit
+        self.limit_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10, margin_top=5)
+        lim_lbl = Gtk.Label(label=lm.get("config.limit.title", "Volume Limit (%)"), xalign=0, margin_end=10, hexpand=True)
+        self.limit_spin = Gtk.SpinButton(adjustment=Gtk.Adjustment(value=min(150.0, float(settings.get(f"volume_limit{self.suffix_str}", 100))), lower=0, upper=150, step_increment=5))
+        self.limit_spin.connect("value-changed", self.on_limit_changed)
+        self.limit_box.append(lim_lbl)
+        self.limit_box.append(self.limit_spin)
+        self.add(self.limit_box)
         
         self.update_device_model()
 
@@ -737,8 +747,9 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
         if not pulse:
             return
             
-        dev_model = Gtk.StringList()
-        dev_model.append(self.parent_action.plugin_base.lm.get("config.device.default", "Default"))
+        self.device_combo.handler_block_by_func(self.on_device_changed)
+        self.device_combo.remove_all()
+        self.device_combo.append("default", self.parent_action.plugin_base.lm.get("config.device.default", "Default"))
         
         items = []
         try:
@@ -752,34 +763,32 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
         except Exception:
             pass
 
-        selected_idx = 0
+        selected_id = "default"
         
         if device_type == "application":
-            for i, app_name in enumerate(items):
-                dev_model.append(app_name)
+            for app_name in items:
+                self.device_combo.append(app_name, app_name)
                 if selected_target == app_name:
-                    selected_idx = i + 1
+                    selected_id = app_name
         else:
-            for i, dev in enumerate(items):
+            for dev in items:
                 desc = getattr(dev, 'description', getattr(dev, 'name', 'Unknown'))
-                dev_model.append(desc)
-                if selected_target == getattr(dev, 'name', ''):
-                    selected_idx = i + 1
+                name = getattr(dev, 'name', '')
+                self.device_combo.append(name, desc)
+                if selected_target == name:
+                    selected_id = name
 
-        self.device_row.set_model(dev_model)
-        self.device_row.set_selected(selected_idx)
+        self.device_combo.set_active_id(selected_id)
+        self.device_combo.handler_unblock_by_func(self.on_device_changed)
         
         if device_type == "application":
-            self.auto_index_row.set_visible(True)
+            self.auto_index_box.set_visible(True)
         else:
-            self.auto_index_row.set_visible(False)
+            self.auto_index_box.set_visible(False)
 
-    def on_type_changed(self, combo, pspec):
+    def on_type_changed(self, combo):
         settings = self.parent_action.get_settings()
-        idx = combo.get_selected()
-        t = "sink"
-        if idx == 1: t = "source"
-        elif idx == 2: t = "application"
+        t = combo.get_active_id() or "sink"
         
         settings[f"device_type{self.suffix_str}"] = t
         settings[f"device_name{self.suffix_str}"] = ""
@@ -787,49 +796,26 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
         self.update_device_model()
         self.parent_action.draw_image()
 
-    def on_device_changed(self, combo, pspec):
+    def on_device_changed(self, combo):
         settings = self.parent_action.get_settings()
-        device_type = settings.get(f"device_type{self.suffix_str}", "sink")
-        idx = combo.get_selected()
+        active_id = combo.get_active_id()
         
-        if idx == 0:
-            settings[f"target_device{self.suffix_str}"] = ""
-            self.parent_action.set_settings(settings)
-            self.parent_action.draw_image()
-            return
+        if active_id == "default" or not active_id:
+            settings[f"device_name{self.suffix_str}"] = ""
+        else:
+            settings[f"device_name{self.suffix_str}"] = active_id
             
-        pulse = self.parent_action.get_pulse()
-        if not pulse:
-            return
-            
-        try:
-            with self.parent_action.plugin_base.pulse_lock:
-                if device_type == "sink":
-                    items = pulse.sink_list()
-                elif device_type == "source":
-                    items = [d for d in pulse.source_list() if not getattr(d, 'name', '').endswith('.monitor') and not getattr(d, 'description', '').startswith('Monitor of')]
-                else:
-                    items = self.parent_action.get_active_applications()
-                
-            if idx - 1 < len(items):
-                if device_type == "application":
-                    settings[f"device_name{self.suffix_str}"] = items[idx - 1]
-                else:
-                    settings[f"device_name{self.suffix_str}"] = getattr(items[idx - 1], 'name', '')
-            
-            self.parent_action.set_settings(settings)
-            self.parent_action.draw_image()
-        except Exception as e:
-            pass
+        self.parent_action.set_settings(settings)
+        self.parent_action.draw_image()
 
-    def on_auto_index_changed(self, spin, pspec):
+    def on_auto_index_changed(self, spin):
         settings = self.parent_action.get_settings()
         settings[f"auto_index{self.suffix_str}"] = spin.get_value()
         self.parent_action.set_settings(settings)
         self.parent_action.draw_image()
 
-    def on_limit_changed(self, spin, pspec):
+    def on_limit_changed(self, spin):
         settings = self.parent_action.get_settings()
-        settings[f"volume_limit{self.suffix_str}"] = min(150.0, spin.get_value())
+        settings[f"volume_limit{self.suffix_str}"] = spin.get_value()
         self.parent_action.set_settings(settings)
         self.parent_action.draw_image()

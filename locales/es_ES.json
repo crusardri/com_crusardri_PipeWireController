@@ -58,5 +58,9 @@
     "config.bar.style.2bars": "2 Barras",
     "config.bar.style.1bar": "1 Barra",
     "config.bar.style.1bar_tri": "1 Barra con Triángulo",
-    "config.bar.style.1bar_line": "1 Barra con Línea"
+    "config.bar.style.1bar_line": "1 Barra con Línea",
+    "config.mode.title": "Modo",
+    "config.mixer.settings.title": "Ajustes del Mezclador",
+    "config.auto_index.title": "Índice automático #",
+    "config.auto_index.subtitle": "0 = desactivado. Usado para apps"
 }

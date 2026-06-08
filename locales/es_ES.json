@@ -51,5 +51,12 @@
     "config.mixer.device_b": "Dispositivo B (Derecha)",
     "config.mixer.default_name": "Mezclador",
     "config.mixer.dual_mode": "Habilitar mezclador",
-    "config.show_icon.title": "Mostrar Icono"
+    "config.show_icon.title": "Mostrar Icono",
+    "config.bar.ind_color": "Color del indicador:",
+    "config.bar.neu_color": "Color neutro:",
+    "config.bar.style": "Estilo de la barra:",
+    "config.bar.style.2bars": "2 Barras",
+    "config.bar.style.1bar": "1 Barra",
+    "config.bar.style.1bar_tri": "1 Barra con Triángulo",
+    "config.bar.style.1bar_line": "1 Barra con Línea"
 }

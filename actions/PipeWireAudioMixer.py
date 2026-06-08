@@ -353,8 +353,12 @@ class PipeWireAudioMixer(PipeWireActionBase):
 
         defs = self.get_calculated_defaults(is_single_mode)
 
+        bar_style = int(settings.get("bar_style", 0))
+        if is_single_mode and bar_style == 0:
+            bar_style = 1
+            
         bar_h_each = settings.get("bar_height", defs["bar_height"])
-        if not is_single_mode:
+        if not is_single_mode and bar_style == 0:
             bar_h_each = max(1, (bar_h_each - 2) // 2)
 
         bar_x = settings.get("bar_x", defs["bar_x"])
@@ -362,7 +366,7 @@ class PipeWireAudioMixer(PipeWireActionBase):
         bar_w = settings.get("bar_width", defs["bar_width"])
         bar_rad = settings.get("bar_radius", defs["bar_radius"])
         
-        if not is_single_mode:
+        if not is_single_mode and bar_style == 0:
             bar_rad /= 2.0
         bar_rad = min(bar_rad, bar_h_each / 2.0)
 
@@ -392,12 +396,13 @@ class PipeWireAudioMixer(PipeWireActionBase):
             if f"pos_x_{key_suffix}" in settings: base_x = settings[f"pos_x_{key_suffix}"]
             else: base_x = defs.get(f"pos_x_{key_suffix}", margin)
             
-            if f"pos_y_{key_suffix}" in settings: y_pos = settings[f"pos_y_{key_suffix}"]
+            if f"pos_y_{key_suffix}" in settings: y_val = settings[f"pos_y_{key_suffix}"]
+            else: y_val = defs.get(f"pos_y_{key_suffix}", default_y)
+            
+            if key_suffix == "pct":
+                y_pos = y_val - h_pango
             else:
-                if key_suffix == "pct":
-                    y_pos = base_bar_y - h_pango - 4
-                else:
-                    y_pos = default_y
+                y_pos = y_val
 
             if align == "left": x = base_x
             elif align == "right": x = base_x + max_w - w_pango
@@ -418,41 +423,20 @@ class PipeWireAudioMixer(PipeWireActionBase):
         c_bar = self._parse_color(settings.get("bar_color", "#FFFFFF"))
         c_bg = self._parse_color(settings.get("bar_bg_color", "#424242"))
         c_over = self._parse_color(settings.get("bar_over_color", "#ff4b4b"))
+        c_ind = self._parse_color(settings.get("bar_ind_color", "#FFFFFF"))
+        c_neu = self._parse_color(settings.get("bar_neu_color", "#808080"))
 
-        def draw_single_bar(y_offset, dev, limit, invert=False):
+        def draw_bar_background(y_offset):
             self.draw_rounded_rect(ctx, bar_x, y_offset, bar_w, bar_h_each, bar_rad)
             ctx.set_source_rgba(*c_bg)
             ctx.fill()
             
-            if not dev: return
+        def draw_fill(start_x, w, rad, color, y_offset):
+            self.draw_rounded_rect(ctx, start_x, y_offset, w, bar_h_each, rad)
+            ctx.set_source_rgba(*color)
+            ctx.fill()
             
-            vol_pct = round(self.get_pulse().volume_get_all_chans(dev) * 100)
-            if dev.mute: vol_pct = 0
-            
-            vol_pct = min(150, vol_pct)
-                
-            active_vol = min(vol_pct, 100.0)
-            over_vol = min(50.0, max(0.0, vol_pct - 100.0))
-            
-            active_fill_w = int(bar_w * (active_vol / 100.0))
-            if active_fill_w > bar_w: active_fill_w = bar_w
-            
-            over_fill_w = int(bar_w * (over_vol / 100.0))
-            
-            if active_fill_w > 0:
-                rad = bar_rad if active_fill_w > bar_rad * 2 else active_fill_w / 2
-                start_x = bar_x if not invert else bar_x + bar_w - active_fill_w
-                self.draw_rounded_rect(ctx, start_x, y_offset, active_fill_w, bar_h_each, rad)
-                ctx.set_source_rgba(*c_bar)
-                ctx.fill()
-                
-            if over_fill_w > 0:
-                rad = bar_rad if over_fill_w > bar_rad * 2 else over_fill_w / 2
-                start_x = bar_x if not invert else (bar_x + bar_w - over_fill_w)
-                self.draw_rounded_rect(ctx, start_x, y_offset, over_fill_w, bar_h_each, rad)
-                ctx.set_source_rgba(*c_over)
-                ctx.fill()
-
+        def draw_outline(y_offset):
             bar_out_w = settings.get("bar_out_width", defs.get("bar_out_width", 1))
             if bar_out_w > 0:
                 c_bar_out = self._parse_color(settings.get("bar_out_color", defs.get("bar_out_color", "#000000")))
@@ -461,13 +445,129 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 self.draw_rounded_rect(ctx, bar_x, y_offset, bar_w, bar_h_each, bar_rad)
                 ctx.stroke()
 
-        limit_a = min(150.0, float(settings.get("volume_limit_a", 100)))
-        limit_b = min(150.0, float(settings.get("volume_limit_b", 100)))
-        
-        draw_single_bar(base_bar_y, dev_a, limit_a, invert=not is_single_mode)
-        
-        if not is_single_mode:
-            draw_single_bar(base_bar_y + bar_h_each + 2, dev_b, limit_b, invert=False)
+        if bar_style == 0 and not is_single_mode:
+            def draw_legacy_bar(y_offset, dev, limit, invert=False):
+                draw_bar_background(y_offset)
+                if dev:
+                    vol_pct = round(self.get_pulse().volume_get_all_chans(dev) * 100)
+                    if dev.mute: vol_pct = 0
+                    active_vol = min(vol_pct, 100.0)
+                    over_vol = min(50.0, max(0.0, vol_pct - 100.0))
+                    
+                    active_fill_w = int(bar_w * (active_vol / 100.0))
+                    active_fill_w = min(bar_w, active_fill_w)
+                    over_fill_w = int(bar_w * (over_vol / 100.0))
+                    
+                    if active_fill_w > 0:
+                        rad = bar_rad if active_fill_w > bar_rad * 2 else active_fill_w / 2
+                        start_x = bar_x if not invert else bar_x + bar_w - active_fill_w
+                        draw_fill(start_x, active_fill_w, rad, c_bar, y_offset)
+                        
+                    if over_fill_w > 0:
+                        rad = bar_rad if over_fill_w > bar_rad * 2 else over_fill_w / 2
+                        start_x = bar_x if not invert else bar_x + bar_w - over_fill_w
+                        draw_fill(start_x, over_fill_w, rad, c_over, y_offset)
+                draw_outline(y_offset)
+
+            limit_a = min(150.0, float(settings.get("volume_limit_a", 100)))
+            limit_b = min(150.0, float(settings.get("volume_limit_b", 100)))
+            draw_legacy_bar(base_bar_y, dev_a, limit_a, invert=True)
+            draw_legacy_bar(base_bar_y + bar_h_each + 2, dev_b, limit_b, invert=False)
+        else:
+            y_offset = base_bar_y
+            draw_bar_background(y_offset)
+            
+            fill_start_x = bar_x
+            fill_w = 0
+            over_fill_w = 0
+            over_start_x = 0
+            marker_x = bar_x
+            
+            if is_single_mode:
+                if dev_a:
+                    vol_pct = round(self.get_pulse().volume_get_all_chans(dev_a) * 100)
+                    if dev_a.mute: vol_pct = 0
+                    
+                    active_vol = min(vol_pct, 100.0)
+                    over_vol = min(50.0, max(0.0, vol_pct - 100.0))
+                    
+                    fill_w = int(bar_w * (active_vol / 100.0))
+                    fill_w = min(bar_w, fill_w)
+                    
+                    over_fill_w = int(bar_w * (over_vol / 100.0))
+                    over_start_x = bar_x
+                    marker_x = bar_x + fill_w
+            else:
+                balance = self.internal_balance
+                center_x = bar_x + bar_w / 2.0
+                if balance < 50:
+                    pct = (50.0 - balance) / 50.0
+                    fill_w = int((bar_w / 2.0) * pct)
+                    fill_start_x = int(center_x - fill_w)
+                    marker_x = fill_start_x
+                else:
+                    pct = (balance - 50.0) / 50.0
+                    fill_w = int((bar_w / 2.0) * pct)
+                    fill_start_x = int(center_x)
+                    marker_x = int(center_x + fill_w)
+                    
+            if fill_w > 0:
+                rad = bar_rad if fill_w > bar_rad * 2 else fill_w / 2
+                draw_fill(fill_start_x, fill_w, rad, c_bar, y_offset)
+                
+            if over_fill_w > 0:
+                rad = bar_rad if over_fill_w > bar_rad * 2 else over_fill_w / 2
+                draw_fill(over_start_x, over_fill_w, rad, c_over, y_offset)
+                
+            if not is_single_mode:
+                ctx.set_source_rgba(*c_neu)
+                ctx.move_to(bar_x + bar_w / 2.0, y_offset)
+                ctx.line_to(bar_x + bar_w / 2.0, y_offset + bar_h_each)
+                ctx.set_line_width(2)
+                ctx.stroke()
+                
+            draw_outline(y_offset)
+            
+            bar_out_w = settings.get("bar_out_width", defs.get("bar_out_width", 1))
+            c_bar_out = self._parse_color(settings.get("bar_out_color", defs.get("bar_out_color", "#000000")))
+            
+            if bar_style == 2:
+                tri_w = 8
+                tri_h = 8
+                
+                ctx.move_to(marker_x, y_offset - 2)
+                ctx.line_to(marker_x - tri_w/2, y_offset - 2 - tri_h)
+                ctx.line_to(marker_x + tri_w/2, y_offset - 2 - tri_h)
+                ctx.close_path()
+                
+                ctx.move_to(marker_x, y_offset + bar_h_each + 2)
+                ctx.line_to(marker_x - tri_w/2, y_offset + bar_h_each + 2 + tri_h)
+                ctx.line_to(marker_x + tri_w/2, y_offset + bar_h_each + 2 + tri_h)
+                ctx.close_path()
+                
+                ctx.set_source_rgba(*c_ind)
+                ctx.fill_preserve()
+                
+                if bar_out_w > 0:
+                    ctx.set_source_rgba(*c_bar_out)
+                    ctx.set_line_width(bar_out_w)
+                    ctx.stroke()
+                else:
+                    ctx.new_path()
+                
+            elif bar_style == 3:
+                if bar_out_w > 0:
+                    ctx.set_source_rgba(*c_bar_out)
+                    ctx.move_to(marker_x, y_offset - 4)
+                    ctx.line_to(marker_x, y_offset + bar_h_each + 4)
+                    ctx.set_line_width(3 + bar_out_w * 2)
+                    ctx.stroke()
+                    
+                ctx.set_source_rgba(*c_ind)
+                ctx.move_to(marker_x, y_offset - 4)
+                ctx.line_to(marker_x, y_offset + bar_h_each + 4)
+                ctx.set_line_width(3)
+                ctx.stroke()
 
         def draw_icon(suffix):
             icon_path = settings.get(f"icon_path_{suffix}", "")
@@ -655,15 +755,15 @@ class PipeWireAudioMixer(PipeWireActionBase):
         defaults["pos_y_name"] = 3
         defaults["align_name"] = "center"
 
-        defaults["width_pct"] = defaults["bar_width"]
-        defaults["pos_x_pct"] = defaults["bar_x"]
-        defaults["pos_y_pct"] = defaults["bar_y"] - 29 - 4
-        defaults["align_pct"] = "right"
-
         icon_size = 48
         defaults["icon_height_a"] = icon_size
         defaults["icon_x_a"] = crop_margin_x + margin
         defaults["icon_y_a"] = defaults["bar_y"] - icon_size - 4
+
+        defaults["width_pct"] = defaults["bar_width"]
+        defaults["pos_x_pct"] = defaults["bar_x"]
+        defaults["pos_y_pct"] = defaults["bar_y"] - 5
+        defaults["align_pct"] = "right"
         defaults["icon_out_width_a"] = 1
         defaults["icon_out_color_a"] = "#000000"
 

@@ -432,6 +432,22 @@ class CustomBarRow(Adw.PreferencesRow):
         label = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.format"), xalign=0, margin_bottom=3, css_classes=["bold"])
         self.main_box.append(label)
         
+        # Style Box
+        self.style_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_bottom=6)
+        self.main_box.append(self.style_box)
+        
+        style_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.style", "Estilo"), xalign=0, margin_end=10)
+        self.style_box.append(style_lbl)
+        
+        self.style_combo = Gtk.ComboBoxText(hexpand=True)
+        self.style_combo.append("0", self.parent.plugin_base.lm.get("config.bar.style.2bars", "2 Barras"))
+        self.style_combo.append("1", self.parent.plugin_base.lm.get("config.bar.style.1bar", "1 Barra"))
+        self.style_combo.append("2", self.parent.plugin_base.lm.get("config.bar.style.1bar_tri", "1 Barra con Triángulo"))
+        self.style_combo.append("3", self.parent.plugin_base.lm.get("config.bar.style.1bar_line", "1 Barra con Línea"))
+        self.style_combo.set_active_id(str(self.settings.get("bar_style", 0)))
+        self.style_combo.connect("changed", self.on_change)
+        self.style_box.append(self.style_combo)
+        
         # Color Box (Base)
         self.color_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
         self.main_box.append(self.color_box)
@@ -480,6 +496,40 @@ class CustomBarRow(Adw.PreferencesRow):
             self.over_color_btn.set_rgba(c)
         self.over_color_btn.connect("color-set", self.on_change)
         self.color_box.append(self.over_color_btn)
+
+        # Colors Box 2
+        self.color_box_2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
+        self.main_box.append(self.color_box_2)
+        
+        ind_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.ind_color", "Color del indicador"), margin_end=5)
+        self.color_box_2.append(ind_lbl)
+        
+        self.ind_color_btn = Gtk.ColorButton()
+        if "bar_ind_color" in self.settings:
+            c = Gdk.RGBA()
+            c.parse(self.settings["bar_ind_color"])
+            self.ind_color_btn.set_rgba(c)
+        else:
+            c = Gdk.RGBA()
+            c.parse("#FFFFFF")
+            self.ind_color_btn.set_rgba(c)
+        self.ind_color_btn.connect("color-set", self.on_change)
+        self.color_box_2.append(self.ind_color_btn)
+        
+        neu_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.neu_color", "Color neutro"), margin_start=15, margin_end=5)
+        self.color_box_2.append(neu_lbl)
+        
+        self.neu_color_btn = Gtk.ColorButton()
+        if "bar_neu_color" in self.settings:
+            c = Gdk.RGBA()
+            c.parse(self.settings["bar_neu_color"])
+            self.neu_color_btn.set_rgba(c)
+        else:
+            c = Gdk.RGBA()
+            c.parse("#808080")
+            self.neu_color_btn.set_rgba(c)
+        self.neu_color_btn.connect("color-set", self.on_change)
+        self.color_box_2.append(self.neu_color_btn)
 
         # Outline Box
         self.out_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
@@ -588,6 +638,10 @@ class CustomBarRow(Adw.PreferencesRow):
 
     def on_change(self, *args):
         if getattr(self, "_updating", False): return
+        
+        if hasattr(self, "style_combo"):
+            self.settings["bar_style"] = int(self.style_combo.get_active_id() or 0)
+            
         rgba = self.color_btn.get_rgba()
         self.settings["bar_color"] = f"#{int(rgba.red*255):02x}{int(rgba.green*255):02x}{int(rgba.blue*255):02x}"
         
@@ -596,6 +650,14 @@ class CustomBarRow(Adw.PreferencesRow):
 
         rgba_over = self.over_color_btn.get_rgba()
         self.settings["bar_over_color"] = f"#{int(rgba_over.red*255):02x}{int(rgba_over.green*255):02x}{int(rgba_over.blue*255):02x}"
+
+        if hasattr(self, "ind_color_btn"):
+            rgba_ind = self.ind_color_btn.get_rgba()
+            self.settings["bar_ind_color"] = f"#{int(rgba_ind.red*255):02x}{int(rgba_ind.green*255):02x}{int(rgba_ind.blue*255):02x}"
+            
+        if hasattr(self, "neu_color_btn"):
+            rgba_neu = self.neu_color_btn.get_rgba()
+            self.settings["bar_neu_color"] = f"#{int(rgba_neu.red*255):02x}{int(rgba_neu.green*255):02x}{int(rgba_neu.blue*255):02x}"
 
         rgba_out = self.out_color_btn.get_rgba()
         self.settings["bar_out_color"] = f"#{int(rgba_out.red*255):02x}{int(rgba_out.green*255):02x}{int(rgba_out.blue*255):02x}"

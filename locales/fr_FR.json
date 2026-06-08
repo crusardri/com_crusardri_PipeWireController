@@ -51,5 +51,12 @@
     "config.mixer.device_b": "Périphérique B (Droite)",
     "config.mixer.default_name": "Mixeur",
     "config.mixer.dual_mode": "Activer le mixeur",
-    "config.show_icon.title": "Afficher l'icône"
+    "config.show_icon.title": "Afficher l'icône",
+    "config.bar.ind_color": "Couleur de l'indicateur :",
+    "config.bar.neu_color": "Couleur neutre :",
+    "config.bar.style": "Style de barre :",
+    "config.bar.style.2bars": "2 Barres",
+    "config.bar.style.1bar": "1 Barre",
+    "config.bar.style.1bar_tri": "1 Barre avec Triangle",
+    "config.bar.style.1bar_line": "1 Barre avec Ligne"
 }

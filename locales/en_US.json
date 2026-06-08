@@ -51,5 +51,12 @@
     "config.mixer.device_b": "Device B (Right)",
     "config.mixer.default_name": "Mixer",
     "config.mixer.dual_mode": "Enable mixer",
-    "config.show_icon.title": "Show Icon"
+    "config.show_icon.title": "Show Icon",
+    "config.bar.ind_color": "Indicator Color:",
+    "config.bar.neu_color": "Neutral Color:",
+    "config.bar.style": "Bar Style:",
+    "config.bar.style.2bars": "2 Bars",
+    "config.bar.style.1bar": "1 Bar",
+    "config.bar.style.1bar_tri": "1 Bar with Triangle",
+    "config.bar.style.1bar_line": "1 Bar with Line"
 }

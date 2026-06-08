@@ -50,6 +50,13 @@
     "config.mixer.device_a": "Gerät A (Links)",
     "config.mixer.device_b": "Gerät B (Rechts)",
     "config.mixer.default_name": "Mixer",
-    "config.mixer.dual_mode": "Mixer aktivieren",
-    "config.show_icon.title": "Symbol anzeigen"
+    "config.mixer.dual_mode": "Mischer aktivieren",
+    "config.show_icon.title": "Symbol anzeigen",
+    "config.bar.ind_color": "Indikatorfarbe:",
+    "config.bar.neu_color": "Neutrale Farbe:",
+    "config.bar.style": "Balkenstil:",
+    "config.bar.style.2bars": "2 Balken",
+    "config.bar.style.1bar": "1 Balken",
+    "config.bar.style.1bar_tri": "1 Balken mit Dreieck",
+    "config.bar.style.1bar_line": "1 Balken mit Linie"
 }

@@ -57,6 +57,43 @@ class PipeWireAudioMixer(PipeWireActionBase):
         self._monitor_display_active = False
         self._last_interaction_time = time.time()
 
+    def _extract_icon_palette(self, pil_img, num_colors=3):
+        try:
+            if pil_img.mode in ('RGBA', 'LA') or (pil_img.mode == 'P' and 'transparency' in pil_img.info):
+                img = pil_img.convert("RGBA")
+                img.thumbnail((32, 32))
+                colors = img.getcolors(4096)
+                if colors:
+                    valid_colors = [(count, rgba) for count, rgba in colors if rgba[3] > 128]
+                    if valid_colors:
+                        valid_colors.sort(key=lambda x: x[0], reverse=True)
+                        palette = []
+                        for count, rgba in valid_colors:
+                            hex_c = f"#{rgba[0]:02x}{rgba[1]:02x}{rgba[2]:02x}"
+                            if hex_c not in palette:
+                                palette.append(hex_c)
+                            if len(palette) >= num_colors:
+                                break
+                        while len(palette) < num_colors:
+                            palette.append(palette[-1] if palette else "#ffffff")
+                        return palette
+            
+            img = pil_img.convert("RGB")
+            img.thumbnail((32, 32))
+            q = img.quantize(colors=num_colors)
+            pal = q.getpalette()
+            res = []
+            for i in range(num_colors):
+                idx = i * 3
+                if idx + 2 < len(pal):
+                    res.append(f"#{pal[idx]:02x}{pal[idx+1]:02x}{pal[idx+2]:02x}")
+                else:
+                    res.append("#ffffff")
+            return res
+        except Exception as e:
+            logging.getLogger(__name__).debug("Color extraction error: %s", e)
+            return ["#ffffff"] * num_colors
+
     def get_active_devices_and_mode(self):
         dev_a = self.get_target_device("a")
         dev_b = self.get_target_device("b")
@@ -413,6 +450,90 @@ class PipeWireAudioMixer(PipeWireActionBase):
             bar_rad /= 2.0
         bar_rad = min(bar_rad, bar_h_each / 2.0)
 
+        def get_icon_data(suffix):
+            icon_path = settings.get(f"icon_path_{suffix}", "")
+            import os
+            icon_h = settings.get(f"icon_height_{suffix}", defs[f"icon_height_{suffix}"])
+            icon_x = settings.get(f"icon_x_{suffix}", defs[f"icon_x_{suffix}"])
+            icon_y = settings.get(f"icon_y_{suffix}", defs[f"icon_y_{suffix}"])
+            
+            icon_out_w = settings.get(f"icon_out_width_{suffix}", defs[f"icon_out_width_{suffix}"])
+            icon_out_c = self._parse_color(settings.get(f"icon_out_color_{suffix}", defs[f"icon_out_color_{suffix}"]))
+            
+            if not icon_path or not os.path.isfile(icon_path):
+                dtype = settings.get(f"device_type_{suffix}", "sink")
+                if dtype == "application":
+                    auto_prefix = self.plugin_base.lm.get("config.device.auto", "Auto") + " "
+                    dev_name = settings.get(f"device_name_{suffix}", auto_prefix + "1")
+                    is_auto = dev_name.startswith(auto_prefix)
+                    
+                    target_app_icon = None
+                    dev = dev_a if suffix == "a" else dev_b
+                    if dev:
+                        target_app_icon = dev.proplist.get('application.icon_name') or dev.proplist.get('application.process.binary')
+                    elif not is_auto:
+                        target_app_icon = dev_name
+                        
+                    found_icon = False
+                    if target_app_icon:
+                        try:
+                            theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+                            icon_info = theme.lookup_icon(target_app_icon, None, 48, 1, Gtk.TextDirection.NONE, Gtk.IconLookupFlags.NONE)
+                            if icon_info:
+                                found_path = icon_info.get_file().get_path()
+                                if found_path:
+                                    icon_path = found_path
+                                    found_icon = True
+                        except Exception as e:
+                            logging.getLogger(__name__).debug("Error finding icon: %s", e)
+                            
+                    if not found_icon:
+                        icon_path = os.path.join(self.plugin_base.PATH, "assets", "speaker.svg")
+                elif dtype == "source":
+                    icon_path = os.path.join(self.plugin_base.PATH, "assets", "mic.svg")
+                else:
+                    icon_path = os.path.join(self.plugin_base.PATH, "assets", "speaker.svg")
+
+            cache_key = f"{icon_path}_{icon_h}_{icon_out_w}_{icon_out_c}"
+            if cache_key in self.icon_cache:
+                pil_img, pal = self.icon_cache[cache_key]
+            else:
+                try:
+                    pil_img = self.load_icon_as_pil(icon_path, icon_h)
+                    pal = self._extract_icon_palette(pil_img, 3)
+                    if icon_out_w > 0:
+                        from PIL import ImageFilter
+                        r, g, b, a = [int(c*255) for c in icon_out_c]
+                        alpha = pil_img.split()[3]
+                        expanded_alpha = alpha.filter(ImageFilter.MaxFilter(icon_out_w * 2 + 1))
+                        outline_img = Image.new("RGBA", pil_img.size, (r, g, b, 255))
+                        outline_img.putalpha(expanded_alpha)
+                        outline_img.paste(pil_img, (0, 0), pil_img)
+                        pil_img = outline_img
+                    self.icon_cache[cache_key] = (pil_img, pal)
+                except Exception as e:
+                    logging.getLogger(__name__).warning("Error generating icon: %s", e)
+                    pil_img = Image.new("RGBA", (icon_h, icon_h), (0,0,0,0))
+                    pal = ["#ffffff", "#ffffff", "#ffffff"]
+            
+            dev = dev_a if suffix == "a" else dev_b
+            is_muted = dev and getattr(dev, 'mute', False)
+            return pil_img, icon_x, icon_y, is_muted, pal
+
+        icon_data_a = get_icon_data("a") if settings.get("show_icon_a", True) else None
+        icon_data_b = get_icon_data("b") if not is_single_mode and settings.get("show_icon_b", True) else None
+
+        def get_auto_color(prefix, suffix, index=0):
+            data = icon_data_a if suffix == "a" else icon_data_b
+            base_color = data[4][index] if data and len(data[4]) > index else "#ffffff"
+            def_darken = 50 if prefix == "bar_bg" else 0
+            darken_pct = int(settings.get(f"{prefix}_auto_darken", def_darken))
+            if darken_pct > 0:
+                r, g, b = int(base_color[1:3], 16), int(base_color[3:5], 16), int(base_color[5:7], 16)
+                f = max(0.0, 1.0 - (darken_pct / 100.0))
+                return f"#{int(r*f):02x}{int(g*f):02x}{int(b*f):02x}"
+            return base_color
+
         def draw_text_section(key_suffix, text, default_y):
             align = settings.get(f"align_{key_suffix}", defs.get(f"align_{key_suffix}", def_align))
             out_width = int(settings.get(f"outline_width_{key_suffix}", def_out_width))
@@ -463,15 +584,46 @@ class PipeWireAudioMixer(PipeWireActionBase):
             ctx.move_to(x, y_pos)
             PangoCairo.show_layout(ctx, layout)
         
-        c_bar = self._parse_color(settings.get("bar_color", "#FFFFFF"))
-        c_bg = self._parse_color(settings.get("bar_bg_color", "#424242"))
+        def get_gradient_source(prefix, suffix, x, w, invert):
+            if invert:
+                lg = cairo.LinearGradient(x + w, 0, x, 0)
+            else:
+                lg = cairo.LinearGradient(x, 0, x + w, 0)
+                
+            cmode = int(settings.get(f"{prefix}_color_mode", 0))
+            if cmode == 3 or (prefix == "monitor" and cmode == 4):
+                stops = 3
+                for i in range(stops):
+                    c = self._parse_color(get_auto_color(prefix, suffix, i))
+                    lg.add_color_stop_rgba(i / (stops - 1), *c)
+            else:
+                stops = int(settings.get(f"{prefix}_gradient_stops", 3))
+                default_colors = ["#00ff00", "#ffff00", "#ff0000", "#00ffff", "#ffff00", "#ff00ff"]
+                for i in range(stops):
+                    c = self._parse_color(settings.get(f"{prefix}_gradient_{i+1}", default_colors[i] if i < len(default_colors) else "#ffffff"))
+                    lg.add_color_stop_rgba(i / (stops - 1), *c)
+            return lg
+
+        def get_bar_color_source(prefix, suffix, def_color, invert=None):
+            cmode = int(settings.get(f"{prefix}_color_mode", 0))
+            if cmode == 0:
+                return self._parse_color(settings.get(f"{prefix}_color", def_color))
+            elif cmode == 2:
+                return self._parse_color(get_auto_color(prefix, suffix, 0))
+            if invert is None: invert = settings.get("bar_invert", False)
+            return get_gradient_source(prefix, suffix, bar_x, bar_w, invert)
+            
         c_over = self._parse_color(settings.get("bar_over_color", "#ff4b4b"))
         c_ind = self._parse_color(settings.get("bar_ind_color", "#FFFFFF"))
         c_neu = self._parse_color(settings.get("bar_neu_color", "#808080"))
 
-        def draw_bar_background(y_offset):
+        def draw_bar_background(y_offset, suffix="a", invert=None):
+            c_bg = get_bar_color_source("bar_bg", suffix, "#424242", invert)
             self.draw_rounded_rect(ctx, bar_x, y_offset, bar_w, bar_h_each, bar_rad)
-            ctx.set_source_rgba(*c_bg)
+            if isinstance(c_bg, cairo.LinearGradient):
+                ctx.set_source(c_bg)
+            else:
+                ctx.set_source_rgba(*c_bg)
             ctx.fill()
             
         def draw_fill(start_x, w, rad, color, y_offset, corner_flags=None):
@@ -484,7 +636,10 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 bl = rad if corner_flags[3] else 0
                 
             self.draw_rounded_rect_custom(ctx, start_x, y_offset, w, bar_h_each, tl, tr, br, bl)
-            ctx.set_source_rgba(*color)
+            if isinstance(color, cairo.LinearGradient):
+                ctx.set_source(color)
+            else:
+                ctx.set_source_rgba(*color)
             ctx.fill()
             
         def draw_outline(y_offset):
@@ -496,10 +651,9 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 self.draw_rounded_rect(ctx, bar_x, y_offset, bar_w, bar_h_each, bar_rad)
                 ctx.stroke()
 
-        def draw_monitor_meter(y_offset, peak_db, rms_db, width, rad):
-            draw_bar_background(y_offset)
-            
+        def draw_monitor_meter(y_offset, suffix, peak_db, rms_db, width, rad):
             invert = settings.get("monitor_invert", False)
+            draw_bar_background(y_offset, suffix, invert)
             
             cmode = int(settings.get("monitor_color_mode", 0))
             min_db = -60.0
@@ -515,13 +669,16 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 if cmode == 0:
                     c_fill = self._parse_color(settings.get("monitor_color_solid", "#ffffff"))
                     draw_fill(fill_x, fill_w, rad_fill, c_fill, y_offset)
+                elif cmode == 3:
+                    c_fill = self._parse_color(get_auto_color("monitor", suffix, 0))
+                    draw_fill(fill_x, fill_w, rad_fill, c_fill, y_offset)
                 else:
                     self.draw_rounded_rect_custom(ctx, fill_x, y_offset, fill_w, bar_h_each, rad_fill, rad_fill, rad_fill, rad_fill)
-                    if invert:
-                        lg = cairo.LinearGradient(bar_x + width, 0, bar_x, 0)
-                    else:
-                        lg = cairo.LinearGradient(bar_x, 0, bar_x + width, 0)
                     if cmode == 1:
+                        if invert:
+                            lg = cairo.LinearGradient(bar_x + width, 0, bar_x, 0)
+                        else:
+                            lg = cairo.LinearGradient(bar_x, 0, bar_x + width, 0)
                         c_low = self._parse_color(settings.get("monitor_color_low", "#00ff00"))
                         c_mid = self._parse_color(settings.get("monitor_color_mid", "#ffff00"))
                         c_high = self._parse_color(settings.get("monitor_color_high", "#ff0000"))
@@ -536,16 +693,8 @@ class PipeWireAudioMixer(PipeWireActionBase):
                         lg.add_color_stop_rgba(pct_mid, *c_mid)
                         lg.add_color_stop_rgba(max(0.0, pct_high-0.001), *c_mid)
                         lg.add_color_stop_rgba(pct_high, *c_high)
-                    elif cmode == 2:
-                        stops = int(settings.get("monitor_gradient_stops", 3))
-                        default_colors = ["#00ff00", "#ffff00", "#ff0000", "#00ffff", "#ffff00", "#ff00ff"]
-                        colors = []
-                        for i in range(stops):
-                            c = self._parse_color(settings.get(f"monitor_gradient_{i+1}", default_colors[i]))
-                            colors.append(c)
-                            
-                        for i, c in enumerate(colors):
-                            lg.add_color_stop_rgba(i / (stops - 1), *c)
+                    elif cmode == 2 or cmode == 4:
+                        lg = get_gradient_source("monitor", suffix, bar_x, width, invert)
                             
                     ctx.set_source(lg)
                     ctx.fill()
@@ -590,19 +739,20 @@ class PipeWireAudioMixer(PipeWireActionBase):
                     peak_l = peak_r = rms_l = rms_r = 0.0
                 peak_db = PeakMonitor.linear_to_db((peak_l + peak_r) / 2.0)
                 rms_db = PeakMonitor.linear_to_db((rms_l + rms_r) / 2.0)
-                draw_monitor_meter(base_bar_y, peak_db, rms_db, bar_w, bar_rad)
+                draw_monitor_meter(base_bar_y, "a", peak_db, rms_db, bar_w, bar_rad)
             else:
                 if is_muted_a: peak_l = peak_r = rms_l = rms_r = 0.0
                 peak_l_db = PeakMonitor.linear_to_db(peak_l)
                 peak_r_db = PeakMonitor.linear_to_db(peak_r)
                 rms_l_db = PeakMonitor.linear_to_db(rms_l)
                 rms_r_db = PeakMonitor.linear_to_db(rms_r)
-                draw_monitor_meter(base_bar_y, peak_l_db, rms_l_db, bar_w, bar_rad)
-                draw_monitor_meter(base_bar_y + bar_h_each + 2, peak_r_db, rms_r_db, bar_w, bar_rad)
+                draw_monitor_meter(base_bar_y, "a", peak_l_db, rms_l_db, bar_w, bar_rad)
+                draw_monitor_meter(base_bar_y + bar_h_each + 2, "a", peak_r_db, rms_r_db, bar_w, bar_rad)
                 
         elif bar_style == 0 and not is_single_mode:
-            def draw_legacy_bar(y_offset, dev, limit, invert=False):
-                draw_bar_background(y_offset)
+            def draw_legacy_bar(y_offset, suffix, dev, limit, invert=False):
+                draw_bar_background(y_offset, suffix, invert)
+                c_bar = get_bar_color_source("bar", suffix, "#FFFFFF", invert)
                 if dev:
                     with self.plugin_base.pulse_lock:
                         vol_pct = round(self.get_pulse().volume_get_all_chans(dev) * 100)
@@ -629,13 +779,14 @@ class PipeWireAudioMixer(PipeWireActionBase):
             bar_invert = settings.get("bar_invert", False)
             limit_a = min(150.0, float(settings.get("volume_limit_a", 100)))
             limit_b = min(150.0, float(settings.get("volume_limit_b", 100)))
-            draw_legacy_bar(base_bar_y, dev_a, limit_a, invert=not bar_invert)
-            draw_legacy_bar(base_bar_y + bar_h_each + 2, dev_b, limit_b, invert=bar_invert)
+            draw_legacy_bar(base_bar_y, "a", dev_a, limit_a, invert=not bar_invert)
+            draw_legacy_bar(base_bar_y + bar_h_each + 2, "b", dev_b, limit_b, invert=bar_invert)
         else:
-            y_offset = base_bar_y
-            draw_bar_background(y_offset)
-            
             bar_invert = settings.get("bar_invert", False)
+            y_offset = base_bar_y
+            draw_bar_background(y_offset, "a", bar_invert)
+            c_bar = get_bar_color_source("bar", "a", "#FFFFFF", bar_invert)
+            
             fill_start_x = bar_x
             fill_w = 0
             over_fill_w = 0
@@ -743,75 +894,6 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 ctx.set_line_width(3)
                 ctx.stroke()
 
-        def draw_icon(suffix):
-            icon_path = settings.get(f"icon_path_{suffix}", "")
-            import os
-            icon_h = settings.get(f"icon_height_{suffix}", defs[f"icon_height_{suffix}"])
-            icon_x = settings.get(f"icon_x_{suffix}", defs[f"icon_x_{suffix}"])
-            icon_y = settings.get(f"icon_y_{suffix}", defs[f"icon_y_{suffix}"])
-            
-            icon_out_w = settings.get(f"icon_out_width_{suffix}", defs[f"icon_out_width_{suffix}"])
-            icon_out_c = self._parse_color(settings.get(f"icon_out_color_{suffix}", defs[f"icon_out_color_{suffix}"]))
-            
-            if not icon_path or not os.path.isfile(icon_path):
-                dtype = settings.get(f"device_type_{suffix}", "sink")
-                if dtype == "application":
-                    auto_prefix = self.plugin_base.lm.get("config.device.auto", "Auto") + " "
-                    dev_name = settings.get(f"device_name_{suffix}", auto_prefix + "1")
-                    is_auto = dev_name.startswith(auto_prefix)
-                    
-                    target_app_icon = None
-                    dev = dev_a if suffix == "a" else dev_b
-                    if dev:
-                        target_app_icon = dev.proplist.get('application.icon_name') or dev.proplist.get('application.process.binary')
-                    elif not is_auto:
-                        target_app_icon = dev_name
-                        
-                    found_icon = False
-                    if target_app_icon:
-                        try:
-                            theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
-                            icon_info = theme.lookup_icon(target_app_icon, None, 48, 1, Gtk.TextDirection.NONE, Gtk.IconLookupFlags.NONE)
-                            if icon_info:
-                                found_path = icon_info.get_file().get_path()
-                                if found_path:
-                                    icon_path = found_path
-                                    found_icon = True
-                        except Exception as e:
-                            logging.getLogger(__name__).debug("Error finding icon: %s", e)
-                            
-                    if not found_icon:
-                        icon_path = os.path.join(self.plugin_base.PATH, "assets", "speaker.svg")
-                elif dtype == "source":
-                    icon_path = os.path.join(self.plugin_base.PATH, "assets", "mic.svg")
-                else:
-                    icon_path = os.path.join(self.plugin_base.PATH, "assets", "speaker.svg")
-
-            cache_key = f"{icon_path}_{icon_h}_{icon_out_w}_{icon_out_c}"
-            if cache_key in self.icon_cache:
-                pil_img = self.icon_cache[cache_key]
-            else:
-                try:
-                    pil_img = self.load_icon_as_pil(icon_path, icon_h)
-                    if icon_out_w > 0:
-                        from PIL import ImageFilter
-                        r, g, b, a = [int(c*255) for c in icon_out_c]
-                        alpha = pil_img.split()[3]
-                        expanded_alpha = alpha.filter(ImageFilter.MaxFilter(icon_out_w * 2 + 1))
-                        outline_img = Image.new("RGBA", pil_img.size, (r, g, b, 255))
-                        outline_img.putalpha(expanded_alpha)
-                        outline_img.paste(pil_img, (0, 0), pil_img)
-                        pil_img = outline_img
- 
-                    self.icon_cache[cache_key] = pil_img
-                except Exception as e:
-                    logging.getLogger(__name__).warning("Error generating icon: %s", e)
-                    pil_img = Image.new("RGBA", (icon_h, icon_h), (0,0,0,0))
-            
-            dev = dev_a if suffix == "a" else dev_b
-            is_muted = dev and getattr(dev, 'mute', False)
-            return pil_img, icon_x, icon_y, is_muted
-                
         text_name = settings.get("text_name", "")
         if not text_name:
             if is_single_mode:
@@ -891,16 +973,16 @@ class PipeWireAudioMixer(PipeWireActionBase):
         cairo_img = Image.frombuffer("RGBA", (width, height), surface_data.tobytes(), "raw", "BGRA", 0, 1)
         base_img = Image.new("RGBA", (width, height), (0,0,0,0))
 
-        if settings.get("show_icon_a", True):
-            icon_a, xa, ya, mute_a = draw_icon("a")
+        if icon_data_a:
+            icon_a, xa, ya, mute_a, _ = icon_data_a
             base_img.alpha_composite(icon_a, (xa, ya))
             if mute_a:
                 from PIL import ImageDraw
                 d = ImageDraw.Draw(base_img)
                 d.line([(xa, ya), (xa + icon_a.width, ya + icon_a.height)], fill=(255, 0, 0, 255), width=max(3, icon_a.height // 10))
             
-        if not is_single_mode and settings.get("show_icon_b", True):
-            icon_b, xb, yb, mute_b = draw_icon("b")
+        if icon_data_b:
+            icon_b, xb, yb, mute_b, _ = icon_data_b
             base_img.alpha_composite(icon_b, (xb, yb))
             if mute_b:
                 from PIL import ImageDraw

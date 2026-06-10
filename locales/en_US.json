@@ -87,5 +87,8 @@
     "config.outline.width": "Outline Width",
     "config.outline.color": "Outline Color",
     "config.monitor.fps.warning": "A high FPS rate increases CPU usage",
-    "config.monitor.app_warning": "Monitor does not support individual applications. It will monitor the entire output device instead."
+    "config.monitor.app_warning": "Monitor does not support individual applications. It will monitor the entire output device instead.",
+    "config.monitor.solid_auto": "Solid Auto (Icon)",
+    "config.monitor.gradient_auto": "Gradient Auto (Icon)",
+    "config.monitor.darken_auto": "Darken Auto %:"
 }

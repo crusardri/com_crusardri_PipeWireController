@@ -86,5 +86,8 @@
     "config.outline.width": "Umrissbreite",
     "config.outline.color": "Umrissfarbe",
     "config.monitor.fps.warning": "Eine hohe Bildrate erhöht die CPU-Auslastung",
-    "config.monitor.app_warning": "Der Monitor unterstützt keine einzelnen Anwendungen. Stattdessen wird das gesamte Ausgabegerät überwacht."
+    "config.monitor.app_warning": "Der Monitor unterstützt keine einzelnen Anwendungen. Stattdessen wird das gesamte Ausgabegerät überwacht.",
+    "config.monitor.solid_auto": "Vollfarbe Auto (Symbol)",
+    "config.monitor.gradient_auto": "Verlauf Auto (Symbol)",
+    "config.monitor.darken_auto": "Abdunkeln Auto %:"
 }

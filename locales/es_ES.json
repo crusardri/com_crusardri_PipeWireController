@@ -87,5 +87,8 @@
     "config.outline.width": "Ancho del Contorno",
     "config.outline.color": "Color del Contorno",
     "config.monitor.fps.warning": "Una alta tasa de FPS aumenta el uso de CPU",
-    "config.monitor.app_warning": "El monitor no funciona con aplicaciones individuales. Se monitorizará el dispositivo de salida completo."
+    "config.monitor.app_warning": "El monitor no funciona con aplicaciones individuales. Se monitorizará el dispositivo de salida completo.",
+    "config.monitor.solid_auto": "Sólido Automático (Icono)",
+    "config.monitor.gradient_auto": "Degradado Automático (Icono)",
+    "config.monitor.darken_auto": "Oscurecer Auto %:"
 }

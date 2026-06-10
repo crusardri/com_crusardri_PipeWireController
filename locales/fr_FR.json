@@ -89,5 +89,8 @@
     "config.outline.width": "Largeur du Contour",
     "config.outline.color": "Couleur du Contour",
     "config.monitor.fps.warning": "Une fréquence d'images élevée augmente l'utilisation du processeur",
-    "config.monitor.app_warning": "Le moniteur ne prend pas en charge les applications individuelles. Le périphérique de sortie complet sera surveillé à la place."
+    "config.monitor.app_warning": "Le moniteur ne prend pas en charge les applications individuelles. Le périphérique de sortie complet sera surveillé à la place.",
+    "config.monitor.solid_auto": "Solide Auto (Icône)",
+    "config.monitor.gradient_auto": "Dégradé Auto (Icône)",
+    "config.monitor.darken_auto": "Assombrir Auto %:"
 }

@@ -44,6 +44,135 @@ class UIComponentsBase(Adw.PreferencesRow):
         else:
             self.settings[key] = val
 
+class GradientConfigBox(Gtk.Box):
+    def __init__(self, prefix, settings, def_colors, on_change_cb, lm):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, margin_top=5)
+        self.prefix = prefix
+        self.settings = settings
+        self.on_change_cb = on_change_cb
+        
+        bgs = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_bottom=5)
+        bgs.append(Gtk.Label(label=lm.get("config.monitor.gradient_colors", "Colores"), xalign=0, margin_end=10))
+        self.cb_stops = Gtk.ComboBoxText(hexpand=True)
+        for i in range(2, 7): self.cb_stops.append(str(i), str(i))
+        self.cb_stops.set_active_id(str(self.settings.get(f"{prefix}_gradient_stops", 3)))
+        self.cb_stops.connect("changed", self._on_stops_changed)
+        bgs.append(self.cb_stops)
+        self.append(bgs)
+        
+        bgc = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5, hexpand=True)
+        self.append(bgc)
+        self.grad_btns = []
+        for i in range(6):
+            btn = Gtk.ColorButton()
+            c = Gdk.RGBA()
+            c.parse(self.settings.get(f"{prefix}_gradient_{i+1}", def_colors[i] if i < len(def_colors) else "#ffffff"))
+            btn.set_rgba(c)
+            btn.connect("color-set", self._on_color_set)
+            self.grad_btns.append(btn)
+            bgc.append(btn)
+            
+        self.preview = Gtk.DrawingArea()
+        self.preview.set_size_request(-1, 15)
+        self.preview.set_margin_top(5)
+        self.preview.set_draw_func(self._on_draw_preview)
+        self.append(self.preview)
+        
+        self.update_visibility()
+
+    def _on_stops_changed(self, combo):
+        self.update_visibility()
+        self.on_change_cb()
+
+    def _on_color_set(self, btn):
+        self.preview.queue_draw()
+        self.on_change_cb()
+
+    def update_visibility(self):
+        stops = int(self.cb_stops.get_active_id() or 3)
+        for i in range(6):
+            self.grad_btns[i].set_visible(i < stops)
+        self.preview.queue_draw()
+
+    def save_settings(self):
+        self.settings[f"{self.prefix}_gradient_stops"] = int(self.cb_stops.get_active_id() or 3)
+        from .PipeWireActionBase import PipeWireActionBase
+        for i in range(6):
+            self.settings[f"{self.prefix}_gradient_{i+1}"] = PipeWireActionBase.rgba_to_hex(self.grad_btns[i].get_rgba())
+
+    def _on_draw_preview(self, area, cr, width, height):
+        import cairo
+        stops = int(self.cb_stops.get_active_id() or 3)
+        lg = cairo.LinearGradient(0, 0, width, 0)
+        for i in range(stops):
+            rgba = self.grad_btns[i].get_rgba()
+            lg.add_color_stop_rgba(i / (stops - 1), rgba.red, rgba.green, rgba.blue, rgba.alpha)
+        cr.set_source(lg)
+        cr.rectangle(0, 0, width, height)
+        cr.fill()
+
+class ColorModeSelector(Gtk.Box):
+    def __init__(self, prefix, title, settings, lm, def_color, def_colors, on_change_cb, def_darken=50):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, hexpand=True, margin_bottom=10)
+        self.prefix = prefix
+        self.settings = settings
+        self.on_change_cb = on_change_cb
+        
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_bottom=5)
+        self.append(row)
+        
+        row.append(Gtk.Label(label=title, xalign=0, margin_end=10, hexpand=True))
+        
+        self.cb_mode = Gtk.ComboBoxText()
+        self.cb_mode.append("0", lm.get("config.monitor.color_solid", "Sólido"))
+        self.cb_mode.append("1", lm.get("config.monitor.color_gradient", "Degradado"))
+        self.cb_mode.append("2", lm.get("config.monitor.solid_auto", "Sólido Automático (Icono)"))
+        self.cb_mode.append("3", lm.get("config.monitor.gradient_auto", "Degradado Automático (Icono)"))
+        self.cb_mode.set_active_id(str(self.settings.get(f"{prefix}_color_mode", 0)))
+        self.cb_mode.connect("changed", self._on_mode_changed)
+        row.append(self.cb_mode)
+        
+        self.box_solid = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, margin_start=10)
+        row.append(self.box_solid)
+        
+        self.btn_solid = Gtk.ColorButton()
+        c = Gdk.RGBA()
+        c.parse(self.settings.get(f"{prefix}_color", def_color))
+        self.btn_solid.set_rgba(c)
+        self.btn_solid.connect("color-set", self.on_change_cb)
+        self.box_solid.append(self.btn_solid)
+        
+        self.box_auto = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, margin_top=5)
+        self.append(self.box_auto)
+        lbl_darken = Gtk.Label(label=lm.get("config.monitor.darken_auto", "Oscurecer Auto %:"), margin_end=5)
+        self.spin_darken = Gtk.SpinButton.new_with_range(0, 100, 5)
+        self.spin_darken.set_value(self.settings.get(f"{prefix}_auto_darken", def_darken))
+        self.spin_darken.connect("value-changed", self.on_change_cb)
+        self.box_auto.append(lbl_darken)
+        self.box_auto.append(self.spin_darken)
+        
+        self.grad_box = GradientConfigBox(prefix, settings, def_colors, on_change_cb, lm)
+        self.append(self.grad_box)
+        
+        self.update_visibility()
+
+    def _on_mode_changed(self, combo):
+        self.update_visibility()
+        self.on_change_cb()
+
+    def update_visibility(self):
+        m = int(self.cb_mode.get_active_id() or 0)
+        self.box_solid.set_visible(m == 0)
+        self.grad_box.set_visible(m == 1)
+        self.box_auto.set_visible(m in (2, 3))
+
+    def save_settings(self):
+        self.settings[f"{self.prefix}_color_mode"] = int(self.cb_mode.get_active_id() or 0)
+        self.settings[f"{self.prefix}_auto_darken"] = int(self.spin_darken.get_value())
+        from .PipeWireActionBase import PipeWireActionBase
+        self.settings[f"{self.prefix}_color"] = PipeWireActionBase.rgba_to_hex(self.btn_solid.get_rgba())
+        self.grad_box.save_settings()
+
 class CustomLabelRow(UIComponentsBase):
     def __init__(self, title_text, settings_dict, key_prefix, parent_action):
         super().__init__(settings_dict, parent_action)
@@ -418,40 +547,32 @@ class CustomBarRow(UIComponentsBase):
         self.style_combo.connect("changed", self.on_change)
         self.style_box.append(self.style_combo)
         
-        # Color Box (Base)
-        self.color_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
-        self.main_box.append(self.color_box)
+        default_colors = ["#00ff00", "#ffff00", "#ff0000", "#00ffff", "#ffff00", "#ff00ff"]
         
-        color_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.color"), margin_end=5)
-        self.color_box.append(color_lbl)
+        self.bar_color_sel = ColorModeSelector("bar", self.parent.plugin_base.lm.get("config.bar.color", "Color de la barra"), self.settings, self.parent.plugin_base.lm, self.defaults_calc.get("bar_color", "#ffffff"), default_colors, self.on_change, def_darken=0)
+        self.main_box.append(self.bar_color_sel)
         
-        self.color_btn = self.create_color_button("bar_color", "#FFFFFF", self.on_change)
-        self.color_box.append(self.color_btn)
-        
-        # Background Color
-        bg_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.background"), margin_start=15, margin_end=5)
-        self.color_box.append(bg_lbl)
-        self.bg_color_btn = self.create_color_button("bar_bg_color", "#424242", self.on_change)
-        self.color_box.append(self.bg_color_btn)
-
-        # Over-limit Color
-        over_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.over100"), margin_start=15, margin_end=5)
-        self.color_box.append(over_lbl)
-        self.over_color_btn = self.create_color_button("bar_over_color", "#ff4b4b", self.on_change)
-        self.color_box.append(self.over_color_btn)
+        self.bg_color_sel = ColorModeSelector("bar_bg", self.parent.plugin_base.lm.get("config.bar.background", "Color de fondo"), self.settings, self.parent.plugin_base.lm, self.defaults_calc.get("bar_bg_color", "#424242"), default_colors, self.on_change, def_darken=50)
+        self.main_box.append(self.bg_color_sel)
 
         # Colors Box 2
         self.color_box_2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.color_box_2)
+
+        # Over-limit Color
+        over_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.over100"), margin_end=5)
+        self.color_box_2.append(over_lbl)
+        self.over_color_btn = self.create_color_button("bar_over_color", "#ff4b4b", self.on_change)
+        self.color_box_2.append(self.over_color_btn)
         
-        ind_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.ind_color", "Indicator Color"), margin_end=5)
+        ind_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.ind_color", "Indicator Color"), margin_start=15, margin_end=5)
         self.color_box_2.append(ind_lbl)
         
         self.ind_color_btn = self.create_color_button("bar_ind_color", "#FFFFFF", self.on_change)
         self.color_box_2.append(self.ind_color_btn)
         
-        neu_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.neu_color", "Neutral Color"), margin_start=15, margin_end=5)
-        self.color_box_2.append(neu_lbl)
+        self.neu_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.neu_color", "Neutral Color"), margin_start=15, margin_end=5)
+        self.color_box_2.append(self.neu_lbl)
         
         self.neu_color_btn = self.create_color_button("bar_neu_color", "#808080", self.on_change)
         self.color_box_2.append(self.neu_color_btn)
@@ -551,6 +672,15 @@ class CustomBarRow(UIComponentsBase):
         self.rad_box.append(btn_reset_rad)
         
         self._updating = False
+        self.update_neu_visibility()
+
+    def update_neu_visibility(self):
+        if hasattr(self, "neu_color_btn"):
+            is_single_mode = not self.settings.get("dual_mode", False)
+            style = int(self.style_combo.get_active_id() or 0)
+            visible = not is_single_mode and style == 1
+            self.neu_lbl.set_visible(visible)
+            self.neu_color_btn.set_visible(visible)
 
     def reset_val(self, key, spin):
         if key in self.settings:
@@ -569,12 +699,11 @@ class CustomBarRow(UIComponentsBase):
         
         if hasattr(self, "style_combo"):
             self.settings["bar_style"] = int(self.style_combo.get_active_id() or 0)
+            self.update_neu_visibility()
             
-        rgba = self.color_btn.get_rgba()
-        self.settings["bar_color"] = PipeWireActionBase.rgba_to_hex(rgba)
-        
-        rgba_bg = self.bg_color_btn.get_rgba()
-        self.settings["bar_bg_color"] = PipeWireActionBase.rgba_to_hex(rgba_bg)
+        if hasattr(self, "bar_color_sel"):
+            self.bar_color_sel.save_settings()
+            self.bg_color_sel.save_settings()
 
         rgba_over = self.over_color_btn.get_rgba()
         self.settings["bar_over_color"] = PipeWireActionBase.rgba_to_hex(rgba_over)
@@ -805,6 +934,8 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         self.cb_color_mode.append("0", lm.get("config.monitor.color_solid", "Solid"))
         self.cb_color_mode.append("1", lm.get("config.monitor.color_tricolor", "Tricolor"))
         self.cb_color_mode.append("2", lm.get("config.monitor.color_gradient", "Gradient"))
+        self.cb_color_mode.append("3", lm.get("config.monitor.solid_auto", "Sólido Automático (Icono)"))
+        self.cb_color_mode.append("4", lm.get("config.monitor.gradient_auto", "Degradado Automático (Icono)"))
         self.cb_color_mode.set_active_id(str(self.settings.get("monitor_color_mode", 0)))
         self.cb_color_mode.connect("changed", self.on_color_mode_change)
         box_color_mode.append(lbl_color_mode)
@@ -814,9 +945,19 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         self.box_solid = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
         self.box_tricolor = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5, hexpand=True)
         self.box_gradient = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5, hexpand=True)
+        self.box_auto = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
+        
         self.settings_container.append(self.box_solid)
         self.settings_container.append(self.box_tricolor)
         self.settings_container.append(self.box_gradient)
+        self.settings_container.append(self.box_auto)
+        
+        lbl_auto_darken = Gtk.Label(label=lm.get("config.monitor.darken_auto", "Oscurecer Auto %:"), margin_end=10, xalign=0, hexpand=True)
+        self.spin_monitor_darken = Gtk.SpinButton.new_with_range(0, 100, 5)
+        self.spin_monitor_darken.set_value(self.settings.get("monitor_auto_darken", 0))
+        self.spin_monitor_darken.connect("value-changed", self.on_change)
+        self.box_auto.append(lbl_auto_darken)
+        self.box_auto.append(self.spin_monitor_darken)
         
         # Solid
         lbl_solid = Gtk.Label(label=lm.get("config.monitor.color", "Color"), xalign=0, hexpand=True)
@@ -847,32 +988,9 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         add_tri_row(lm.get("config.monitor.color_high", "High"), self.btn_tri_high, "monitor_threshold_high", -9)
         
         # Gradient
-        bgs = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
-        bgs.append(Gtk.Label(label=lm.get("config.monitor.gradient_colors", "Colors"), xalign=0, margin_end=10))
-        self.cb_grad_stops = Gtk.ComboBoxText(hexpand=True)
-        for i in range(2, 7):
-            self.cb_grad_stops.append(str(i), str(i))
-        self.cb_grad_stops.set_active_id(str(self.settings.get("monitor_gradient_stops", 3)))
-        self.cb_grad_stops.connect("changed", self.on_grad_stops_change)
-        bgs.append(self.cb_grad_stops)
-        self.box_gradient.append(bgs)
-        
-        bgc = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5, hexpand=True)
-        self.box_gradient.append(bgc)
-        
         default_colors = ["#00ff00", "#ffff00", "#ff0000", "#00ffff", "#ffff00", "#ff00ff"]
-        self.grad_btns = []
-        for i in range(6):
-            btn = self.create_color_button(f"monitor_gradient_{i+1}", default_colors[i], self.on_change)
-            self.grad_btns.append(btn)
-            setattr(self, f"btn_g{i+1}", btn)
-            bgc.append(btn)
-            
-        import cairo
-        self.preview_area = Gtk.DrawingArea()
-        self.preview_area.set_size_request(-1, 20)
-        self.preview_area.set_draw_func(self.on_draw_preview)
-        self.box_gradient.append(self.preview_area)
+        self.grad_config = GradientConfigBox("monitor", self.settings, default_colors, self.on_change, lm)
+        self.box_gradient.append(self.grad_config)
         
         # 4. Timing
         bfps = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=5)
@@ -967,54 +1085,33 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         self.on_change()
         self.update_visibility()
         
-    def on_grad_stops_change(self, *args):
-        self.on_change()
-        stops = int(self.cb_grad_stops.get_active_id() or 3)
-        for i in range(6):
-            self.grad_btns[i].set_visible(i < stops)
-        self.preview_area.queue_draw()
-        
     def update_visibility(self):
         self.settings_container.set_sensitive(self.sw_enable.get_active())
         cmode = int(self.cb_color_mode.get_active_id() or 0)
         self.box_solid.set_visible(cmode == 0)
         self.box_tricolor.set_visible(cmode == 1)
         self.box_gradient.set_visible(cmode == 2)
+        self.box_auto.set_visible(cmode in (3, 4))
         
         if hasattr(self, "brms_options"):
             self.brms_options.set_sensitive(self.sw_rms.get_active())
             if hasattr(self, "brms_options2"):
                 self.brms_options2.set_sensitive(self.sw_rms.get_active())
-        if cmode == 2: self.on_grad_stops_change()
-            
-    def on_draw_preview(self, area, cr, width, height):
-        import cairo
-        stops = int(self.cb_grad_stops.get_active_id() or 3)
-        lg = cairo.LinearGradient(0, 0, width, 0)
-        
-        for i in range(stops):
-            btn = self.grad_btns[i]
-            c = PipeWireActionBase._parse_color(None, PipeWireActionBase.rgba_to_hex(btn.get_rgba()))
-            lg.add_color_stop_rgba(i / (stops - 1), *c)
-            
-        cr.set_source(lg)
-        cr.rectangle(0, 0, width, height)
-        cr.fill()
         
     def on_change(self, *args):
         if self._updating: return
         self.settings["monitor_enabled"] = self.sw_enable.get_active()
         self.settings["monitor_bar_mode"] = int(self.cb_bar_mode.get_active_id() or 0)
         self.settings["monitor_color_mode"] = int(self.cb_color_mode.get_active_id() or 0)
+        self.settings["monitor_auto_darken"] = int(self.spin_monitor_darken.get_value()) if hasattr(self, 'spin_monitor_darken') else 0
         self.settings["monitor_color_solid"] = PipeWireActionBase.rgba_to_hex(self.btn_solid.get_rgba())
         self.settings["monitor_color_low"] = PipeWireActionBase.rgba_to_hex(self.btn_tri_low.get_rgba())
         self.settings["monitor_color_mid"] = PipeWireActionBase.rgba_to_hex(self.btn_tri_mid.get_rgba())
         self.settings["monitor_color_high"] = PipeWireActionBase.rgba_to_hex(self.btn_tri_high.get_rgba())
         self.settings["monitor_threshold_mid"] = int(self.spin_monitor_threshold_mid.get_value()) if hasattr(self, "spin_monitor_threshold_mid") else -20
         self.settings["monitor_threshold_high"] = int(self.spin_monitor_threshold_high.get_value()) if hasattr(self, "spin_monitor_threshold_high") else -9
-        self.settings["monitor_gradient_stops"] = int(self.cb_grad_stops.get_active_id() or 3)
-        for i in range(6):
-            self.settings[f"monitor_gradient_{i+1}"] = PipeWireActionBase.rgba_to_hex(self.grad_btns[i].get_rgba())
+        if hasattr(self, "grad_config"):
+            self.grad_config.save_settings()
         self.settings["monitor_fps"] = int(self.cb_fps.get_active_id() or 10)
         self.settings["monitor_delay"] = int(self.spin_delay.get_value())
         self.settings["monitor_show_db"] = self.sw_db.get_active()
@@ -1023,7 +1120,6 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         self.settings["monitor_rms_out_color"] = PipeWireActionBase.rgba_to_hex(self.btn_rms_out_color.get_rgba())
         self.settings["monitor_rms_out_width"] = float(self.spin_rms_out.get_value())
         self.settings["monitor_invert"] = getattr(self, "sw_mon_inv", self.sw_rms).get_active() if hasattr(self, 'sw_mon_inv') else False
-        if hasattr(self, "preview_area"):
-            self.preview_area.queue_draw()
+
         self.parent.set_settings(self.settings)
         self.parent.draw_image()

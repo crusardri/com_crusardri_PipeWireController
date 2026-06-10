@@ -104,7 +104,8 @@ class PeakMonitor:
         # If already monitoring the same device, don't restart
         if (self._running and self._current_device is not None 
                 and hasattr(device, 'index') and hasattr(self._current_device, 'index')
-                and device.index == self._current_device.index):
+                and device.index == self._current_device.index
+                and type(device) is type(self._current_device)):
             return True
 
         if self._running:

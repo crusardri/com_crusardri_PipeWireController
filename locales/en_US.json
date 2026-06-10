@@ -1,11 +1,6 @@
 {
     "plugin.name": "PipeWire Controller",
-    "actions.pipewire-audio.name": "Audio Controller",
-    "actions.pipewire-audio.event.toggle-mute": "Toggle Mute",
-    "actions.pipewire-audio.event.mute-on": "Mute On",
-    "actions.pipewire-audio.event.mute-off": "Mute Off",
-    "actions.pipewire-audio.event.volume-up": "Volume Up",
-    "actions.pipewire-audio.event.volume-down": "Volume Down",
+
     "config.device.title": "Device",
     "config.device.default": "System Default",
     "config.type.title": "Device Type",

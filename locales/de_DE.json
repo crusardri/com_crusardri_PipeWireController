@@ -1,11 +1,6 @@
 {
     "plugin.name": "PipeWire Controller",
-    "actions.pipewire-audio.name": "Audio-Controller",
-    "actions.pipewire-audio.event.toggle-mute": "Stummschaltung umschalten",
-    "actions.pipewire-audio.event.mute-on": "Stummschalten",
-    "actions.pipewire-audio.event.mute-off": "Stummschaltung aufheben",
-    "actions.pipewire-audio.event.volume-up": "Lautstärke erhöhen",
-    "actions.pipewire-audio.event.volume-down": "Lautstärke verringern",
+
     "config.device.title": "Gerät",
     "config.device.default": "Systemstandard",
     "config.type.title": "Gerätetyp",

@@ -7,15 +7,14 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Gtk, Adw, GLib, Gdk, Pango, PangoCairo, GdkPixbuf
 import cairo
 import globals as gl
+import logging
 
 from src.backend.PluginManager.EventAssigner import EventAssigner
 from src.backend.DeckManagement.InputIdentifier import Input
 
 import pulsectl
-import math
 from PIL import Image
 import traceback
-import os
 
 from .PipeWireActionBase import PipeWireActionBase, HAS_RSVG
 from .UIComponents import CustomLabelRow, CustomIconRow, CustomBarRow, DeviceConfigGroup
@@ -74,14 +73,15 @@ class PipeWireAudioMixer(PipeWireActionBase):
         try:
             dev_a, dev_b, is_single_mode = self.get_active_devices_and_mode()
                 
-            vol_a = int(round(self.get_pulse().volume_get_all_chans(dev_a) * 100)) if dev_a else 0
-            vol_b = int(round(self.get_pulse().volume_get_all_chans(dev_b) * 100)) if dev_b else 0
-            
-            mut_a = bool(dev_a.mute) if dev_a else False
-            mut_b = bool(dev_b.mute) if dev_b else False
-            
-            nm_a = dev_a.name if dev_a else "OFFLINE"
-            nm_b = dev_b.name if dev_b else "OFFLINE"
+            with self.plugin_base.pulse_lock:
+                vol_a = int(round(self.get_pulse().volume_get_all_chans(dev_a) * 100)) if dev_a else 0
+                vol_b = int(round(self.get_pulse().volume_get_all_chans(dev_b) * 100)) if dev_b else 0
+                
+                mut_a = bool(dev_a.mute) if dev_a else False
+                mut_b = bool(dev_b.mute) if dev_b else False
+                
+                nm_a = dev_a.name if dev_a else "OFFLINE"
+                nm_b = dev_b.name if dev_b else "OFFLINE"
             
             changed = (self.last_state["vol_a"] != vol_a or 
                        self.last_state["vol_b"] != vol_b or 
@@ -111,8 +111,8 @@ class PipeWireAudioMixer(PipeWireActionBase):
                         self.internal_balance = 100.0 - (50.0 * pct_a)
                     
                 self.draw_image()
-        except Exception:
-            pass
+        except Exception as e:
+            logging.getLogger(__name__).debug("on_tick error: %s", e)
 
     def on_ready(self):
         self.draw_image()
@@ -157,8 +157,8 @@ class PipeWireAudioMixer(PipeWireActionBase):
                                 
                         if idx < len(apps):
                             target_app = apps[idx]
-                    except (ValueError, IndexError):
-                        pass
+                    except (ValueError, IndexError) as e:
+                        logging.getLogger(__name__).debug("Error getting auto index: %s", e)
                 else:
                     target_app = device_name
                 
@@ -221,8 +221,8 @@ class PipeWireAudioMixer(PipeWireActionBase):
                             for d in pulse.source_list():
                                 if d.name == def_name:
                                     return d.description
-                except Exception:
-                    pass
+                except Exception as e:
+                    logging.getLogger(__name__).debug("Error getting default name: %s", e)
             return "Default"
         return name
 
@@ -241,14 +241,15 @@ class PipeWireAudioMixer(PipeWireActionBase):
             success, buffer = pixbuf.save_to_bufferv("png", [], [])
             if success:
                 return Image.open(io.BytesIO(buffer)).convert("RGBA")
-        except Exception:
-            pass
+        except Exception as e:
+            logging.getLogger(__name__).debug("Error loading icon with GdkPixbuf: %s", e)
         
         try:
             pil_img = Image.open(icon_path).convert("RGBA")
             i_w = int(pil_img.width * (target_h / float(pil_img.height))) if pil_img.height > 0 else target_h
             return pil_img.resize((i_w, target_h), Image.Resampling.LANCZOS)
-        except Exception:
+        except Exception as e:
+            logging.getLogger(__name__).debug("Error resizing PIL image: %s", e)
             return Image.new("RGBA", (target_h, target_h), (0, 0, 0, 0))
 
     def on_toggle_mute(self, data=None):
@@ -274,10 +275,11 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 with self.plugin_base.pulse_lock:
                     self.get_pulse().volume_set_all_chans(dev_a, new_vol_a / 100.0)
         else:
-            vol_a = int(round(self.get_pulse().volume_get_all_chans(dev_a) * 100)) if dev_a else 0
-            vol_b = int(round(self.get_pulse().volume_get_all_chans(dev_b) * 100)) if dev_b else 0
-            if dev_a and dev_a.mute: vol_a = 0
-            if dev_b and dev_b.mute: vol_b = 0
+            with self.plugin_base.pulse_lock:
+                vol_a = int(round(self.get_pulse().volume_get_all_chans(dev_a) * 100)) if dev_a else 0
+                vol_b = int(round(self.get_pulse().volume_get_all_chans(dev_b) * 100)) if dev_b else 0
+                if dev_a and dev_a.mute: vol_a = 0
+                if dev_b and dev_b.mute: vol_b = 0
             
             if amount > 0:
                 # Mix towards B: increase B up to limit_b, then decrease A
@@ -324,17 +326,7 @@ class PipeWireAudioMixer(PipeWireActionBase):
         settings = self.get_settings()
         dev_a, dev_b, is_single_mode = self.get_active_devices_and_mode()
         
-        width, height = 100, 100
-        try:
-            ctrl_input = self.get_input()
-            if ctrl_input:
-                width, height = ctrl_input.get_image_size()
-        except Exception:
-            pass
-            
-        width = max(32, width)
-        height = max(32, height)
-        
+        defs, width, height = self.get_calculated_defaults()
         surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
         ctx = cairo.Context(surface)
         
@@ -352,8 +344,6 @@ class PipeWireAudioMixer(PipeWireActionBase):
         def_font_family = defaults.get("font-family", "Sans")
         def_font_size = int(defaults.get("font-size", 15))
         def_font_desc = f"{def_font_family} {def_font_size}"
-
-        defs = self.get_calculated_defaults(is_single_mode)
 
         bar_style = int(settings.get("bar_style", 0))
         if is_single_mode and bar_style == 0:
@@ -459,8 +449,10 @@ class PipeWireAudioMixer(PipeWireActionBase):
             def draw_legacy_bar(y_offset, dev, limit, invert=False):
                 draw_bar_background(y_offset)
                 if dev:
-                    vol_pct = round(self.get_pulse().volume_get_all_chans(dev) * 100)
-                    if dev.mute: vol_pct = 0
+                    with self.plugin_base.pulse_lock:
+                        vol_pct = round(self.get_pulse().volume_get_all_chans(dev) * 100)
+                        is_mute = dev.mute
+                    if is_mute: vol_pct = 0
                     active_vol = min(vol_pct, 100.0)
                     over_vol = min(50.0, max(0.0, vol_pct - 100.0))
                     
@@ -495,8 +487,10 @@ class PipeWireAudioMixer(PipeWireActionBase):
             
             if is_single_mode:
                 if dev_a:
-                    vol_pct = round(self.get_pulse().volume_get_all_chans(dev_a) * 100)
-                    if dev_a.mute: vol_pct = 0
+                    with self.plugin_base.pulse_lock:
+                        vol_pct = round(self.get_pulse().volume_get_all_chans(dev_a) * 100)
+                        is_mute = dev_a.mute
+                    if is_mute: vol_pct = 0
                     
                     active_vol = min(vol_pct, 100.0)
                     over_vol = min(50.0, max(0.0, vol_pct - 100.0))
@@ -587,6 +581,7 @@ class PipeWireAudioMixer(PipeWireActionBase):
 
         def draw_icon(suffix):
             icon_path = settings.get(f"icon_path_{suffix}", "")
+            import os
             icon_h = settings.get(f"icon_height_{suffix}", defs[f"icon_height_{suffix}"])
             icon_x = settings.get(f"icon_x_{suffix}", defs[f"icon_x_{suffix}"])
             icon_y = settings.get(f"icon_y_{suffix}", defs[f"icon_y_{suffix}"])
@@ -619,7 +614,7 @@ class PipeWireAudioMixer(PipeWireActionBase):
                                     icon_path = found_path
                                     found_icon = True
                         except Exception as e:
-                            pass
+                            logging.getLogger(__name__).debug("Error finding icon: %s", e)
                             
                     if not found_icon:
                         icon_path = os.path.join(self.plugin_base.PATH, "assets", "speaker.svg")
@@ -646,6 +641,7 @@ class PipeWireAudioMixer(PipeWireActionBase):
  
                     self.icon_cache[cache_key] = pil_img
                 except Exception as e:
+                    logging.getLogger(__name__).warning("Error generating icon: %s", e)
                     pil_img = Image.new("RGBA", (icon_h, icon_h), (0,0,0,0))
             
             dev = dev_a if suffix == "a" else dev_b
@@ -663,8 +659,10 @@ class PipeWireAudioMixer(PipeWireActionBase):
         pct_format = int(settings.get("pct_format", 0))
         val = 0.0
         if is_single_mode:
-            v = (self.get_pulse().volume_get_all_chans(dev_a) * 100) if dev_a else 0
-            if dev_a and dev_a.mute: v = 0
+            with self.plugin_base.pulse_lock:
+                v = (self.get_pulse().volume_get_all_chans(dev_a) * 100) if dev_a else 0
+                is_mute = dev_a.mute if dev_a else False
+            if is_mute: v = 0
             val = v
         else:
             val = self.internal_balance
@@ -728,68 +726,44 @@ class PipeWireAudioMixer(PipeWireActionBase):
         cairo_img.alpha_composite(base_img)
         self.set_media(image=cairo_img)
 
-    def get_calculated_defaults(self, is_single_mode=False):
-        width, height = 100, 100
-        visible_width = 100
-        crop_margin_x = 0
-        try:
-            ctrl_input = self.get_input()
-            if ctrl_input:
-                width, height = ctrl_input.get_image_size()
-                visible_width = width
-                if hasattr(ctrl_input.deck_controller, "deck"):
-                    deck = ctrl_input.deck_controller.deck
-                    if hasattr(deck, "TOUCHBAR_KEY_PIXEL_WIDTH"):
-                        visible_width = deck.TOUCHBAR_KEY_PIXEL_WIDTH
-                        crop_margin_x = (width - visible_width) // 2
-                    elif deck.deck_type() == "Mirabox StreamDeck N4":
-                        visible_width = 176
-                        crop_margin_x = (width - visible_width) // 2
-        except Exception:
-            pass
-            
-        width = max(32, width)
-        visible_width = max(32, visible_width)
-        height = max(32, height)
-
-        defaults = {}
-        bar_h = 8
-        defaults["bar_height"] = bar_h
-        margin = int(round(visible_width * 0.03))
+    def get_calculated_defaults(self):
+        ctrl_input = self.get_input()
+        is_single_mode = self.get_settings().get("dual_mode", False) == False
+        defs, width, height = super().get_calculated_defaults(ctrl_input, is_single_mode)
         
-        defaults["bar_x"] = crop_margin_x + margin
-        defaults["bar_y"] = height - bar_h - int(round(height * 0.03))
-        defaults["bar_width"] = visible_width - (margin * 2)
-        defaults["bar_radius"] = 5
-        defaults["bar_out_width"] = 1
-        defaults["bar_out_color"] = "#000000"
-
-        max_w = visible_width - (margin * 2)
-
-        defaults["width_name"] = max_w
-        defaults["pos_x_name"] = crop_margin_x + margin
-        defaults["pos_y_name"] = 3
-        defaults["align_name"] = "center"
+        # Override specific needs
+        bar_h = 8
+        defs["bar_height"] = bar_h
+        defs["bar_y"] = height - bar_h - int(round(height * 0.03))
+        defs["bar_radius"] = 5
+        defs["bar_out_width"] = 1
+        defs["bar_out_color"] = "#000000"
+        
+        margin = defs.get("bar_x", 5)
+        defs["width_name"] = width - (margin * 2)
+        defs["pos_x_name"] = margin
+        defs["pos_y_name"] = 3
+        defs["align_name"] = "center"
 
         icon_size = 48
-        defaults["icon_height_a"] = icon_size
-        defaults["icon_x_a"] = crop_margin_x + margin
-        defaults["icon_y_a"] = defaults["bar_y"] - icon_size - 4
+        defs["icon_height_a"] = icon_size
+        defs["icon_x_a"] = margin
+        defs["icon_y_a"] = defs["bar_y"] - icon_size - 4
 
-        defaults["width_pct"] = defaults["bar_width"]
-        defaults["pos_x_pct"] = defaults["bar_x"]
-        defaults["pos_y_pct"] = defaults["bar_y"] - 5
-        defaults["align_pct"] = "right"
-        defaults["icon_out_width_a"] = 1
-        defaults["icon_out_color_a"] = "#000000"
+        defs["width_pct"] = defs["bar_width"]
+        defs["pos_x_pct"] = defs["bar_x"]
+        defs["pos_y_pct"] = defs["bar_y"] - 5
+        defs["align_pct"] = "right"
+        defs["icon_out_width_a"] = 1
+        defs["icon_out_color_a"] = "#000000"
 
-        defaults["icon_height_b"] = icon_size
-        defaults["icon_x_b"] = defaults["icon_x_a"] + icon_size + 5
-        defaults["icon_y_b"] = defaults["icon_y_a"]
-        defaults["icon_out_width_b"] = 1
-        defaults["icon_out_color_b"] = "#000000"
-
-        return defaults
+        defs["icon_height_b"] = icon_size
+        defs["icon_x_b"] = defs["icon_x_a"] + icon_size + 5
+        defs["icon_y_b"] = defs["icon_y_a"]
+        defs["icon_out_width_b"] = 1
+        defs["icon_out_color_b"] = "#000000"
+        
+        return defs, width, height
 
     def get_config_rows(self):
         try:
@@ -804,7 +778,7 @@ class PipeWireAudioMixer(PipeWireActionBase):
             self.exp_dev_b.add_row(self.grp_b)
             
             grp_mode = Adw.PreferencesGroup(title=self.plugin_base.lm.get("config.mode.title", "Mode"))
-            self.switch_dual = Adw.SwitchRow(title=self.plugin_base.lm.get("config.mixer.dual_mode", "Habilitar mezclador"))
+            self.switch_dual = Adw.SwitchRow(title=self.plugin_base.lm.get("config.mixer.dual_mode", "Enable Mixer"))
             self.switch_dual.set_active(settings.get("dual_mode", False))
             self.switch_dual.connect("notify::active", self.on_dual_mode_change)
             grp_mode.add(self.switch_dual)

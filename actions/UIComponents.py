@@ -5,12 +5,48 @@ gi.require_version("Pango", "1.0")
 from gi.repository import Gtk, Adw, GLib, Gdk, Pango
 import globals as gl
 
-class CustomLabelRow(Adw.PreferencesRow):
-    def __init__(self, title_text, settings_dict, key_prefix, parent_action):
+from .PipeWireActionBase import PipeWireActionBase
+
+class UIComponentsBase(Adw.PreferencesRow):
+    def __init__(self, settings_dict, parent_action):
         super().__init__()
         self.settings = settings_dict
-        self.key_prefix = key_prefix
         self.parent = parent_action
+        self.defaults_calc = {}
+        if hasattr(self.parent, "get_calculated_defaults"):
+            self.defaults_calc = self.parent.get_calculated_defaults()
+        self._updating = False
+
+    def create_color_button(self, settings_key, default_hex, on_change_cb):
+        btn = Gtk.ColorButton()
+        c = Gdk.RGBA()
+        c.parse(self.settings.get(settings_key, default_hex))
+        btn.set_rgba(c)
+        btn.connect("color-set", on_change_cb)
+        return btn
+
+    def reset_val(self, key, spin):
+        if key in self.settings:
+            del self.settings[key]
+        self._updating = True
+        spin.set_value(self.defaults_calc.get(key, 0))
+        self._updating = False
+        self.parent.set_settings(self.settings)
+        if hasattr(self.parent, "last_state"):
+            if "vol_a" in self.parent.last_state: self.parent.last_state["vol_a"] = -1
+            if "vol_b" in self.parent.last_state: self.parent.last_state["vol_b"] = -1
+        self.parent.draw_image()
+
+    def save_or_del(self, key, val):
+        if val == self.defaults_calc.get(key, 0):
+            self.settings.pop(key, None)
+        else:
+            self.settings[key] = val
+
+class CustomLabelRow(UIComponentsBase):
+    def __init__(self, title_text, settings_dict, key_prefix, parent_action):
+        super().__init__(settings_dict, parent_action)
+        self.key_prefix = key_prefix
 
         defaults = gl.settings_manager.font_defaults
         def_color_rgba = Gdk.RGBA()
@@ -70,14 +106,7 @@ class CustomLabelRow(Adw.PreferencesRow):
             self.pct_format_combo.connect("changed", self.on_change)
             self.text_box.append(self.pct_format_combo)
 
-        self.color_btn = Gtk.ColorButton()
-        if f"color_{key_prefix}" in self.settings:
-            c = Gdk.RGBA()
-            c.parse(self.settings[f"color_{key_prefix}"])
-            self.color_btn.set_rgba(c)
-        else:
-            self.color_btn.set_rgba(def_color_rgba)
-        self.color_btn.connect("color-set", self.on_change)
+        self.color_btn = self.create_color_button(f"color_{key_prefix}", f"#{int(def_color_rgba.red*255):02x}{int(def_color_rgba.green*255):02x}{int(def_color_rgba.blue*255):02x}", self.on_change)
         self.text_box.append(self.color_btn)
 
         self.font_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
@@ -134,25 +163,14 @@ class CustomLabelRow(Adw.PreferencesRow):
         out_color_label = Gtk.Label(label=self.parent.plugin_base.lm.get("config.outline.color"), xalign=1, hexpand=True, margin_start=2, margin_end=5)
         self.out_box.append(out_color_label)
 
-        self.out_color_btn = Gtk.ColorButton()
-        if f"outline_color_{key_prefix}" in self.settings:
-            c = Gdk.RGBA()
-            c.parse(self.settings[f"outline_color_{key_prefix}"])
-            self.out_color_btn.set_rgba(c)
-        else:
-            self.out_color_btn.set_rgba(def_out_rgba)
-        self.out_color_btn.connect("color-set", self.on_change)
+        self.out_color_btn = self.create_color_button(f"outline_color_{key_prefix}", f"#{int(def_out_rgba.red*255):02x}{int(def_out_rgba.green*255):02x}{int(def_out_rgba.blue*255):02x}", self.on_change)
         self.out_box.append(self.out_color_btn)
 
         # X, Y
         self.xy_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.xy_box)
         
-        self.defaults_calc = {}
-        if hasattr(self.parent, "get_calculated_defaults"):
-            self.defaults_calc = self.parent.get_calculated_defaults()
 
-        self._updating = True
 
         x_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.pos.x"), margin_end=5)
         self.x_spin = Gtk.SpinButton.new_with_range(-2000, 2000, 1)
@@ -192,18 +210,6 @@ class CustomLabelRow(Adw.PreferencesRow):
         self.w_box.append(self.w_spin)
         self.w_box.append(btn_reset_w)
         
-        self._updating = False
-
-    def reset_val(self, key, spin):
-        if key in self.settings:
-            del self.settings[key]
-        self._updating = True
-        spin.set_value(self.defaults_calc.get(key, 0))
-        self._updating = False
-        self.parent.set_settings(self.settings)
-        if hasattr(self.parent, "last_state"):
-            self.parent.last_state["vol"] = -1
-        self.parent.draw_image()
 
 
     def on_change(self, *args):
@@ -214,7 +220,7 @@ class CustomLabelRow(Adw.PreferencesRow):
             self.settings["pct_format"] = int(self.pct_format_combo.get_active_id() or 0)
 
         rgba = self.color_btn.get_rgba()
-        self.settings[f"color_{self.key_prefix}"] = f"#{int(rgba.red*255):02x}{int(rgba.green*255):02x}{int(rgba.blue*255):02x}"
+        self.settings[f"color_{self.key_prefix}"] = PipeWireActionBase.rgba_to_hex(rgba)
 
         desc = self.font_btn.get_font_desc()
         self.settings[f"font_desc_{self.key_prefix}"] = desc.to_string()
@@ -227,28 +233,21 @@ class CustomLabelRow(Adw.PreferencesRow):
         self.settings[f"outline_width_{self.key_prefix}"] = int(self.out_spin.get_value())
 
         rgba_out = self.out_color_btn.get_rgba()
-        self.settings[f"outline_color_{self.key_prefix}"] = f"#{int(rgba_out.red*255):02x}{int(rgba_out.green*255):02x}{int(rgba_out.blue*255):02x}"
+        self.settings[f"outline_color_{self.key_prefix}"] = PipeWireActionBase.rgba_to_hex(rgba_out)
         
-        def save_or_del(key, val):
-            if val == self.defaults_calc.get(key, 0):
-                self.settings.pop(key, None)
-            else:
-                self.settings[key] = val
-
-        save_or_del(f"pos_x_{self.key_prefix}", int(self.x_spin.get_value()))
-        save_or_del(f"pos_y_{self.key_prefix}", int(self.y_spin.get_value()))
-        save_or_del(f"width_{self.key_prefix}", int(self.w_spin.get_value()))
+        self.save_or_del(f"pos_x_{self.key_prefix}", int(self.x_spin.get_value()))
+        self.save_or_del(f"pos_y_{self.key_prefix}", int(self.y_spin.get_value()))
+        self.save_or_del(f"width_{self.key_prefix}", int(self.w_spin.get_value()))
 
         self.parent.set_settings(self.settings)
         if hasattr(self.parent, "last_state"):
-            self.parent.last_state["vol"] = -1
+            if "vol_a" in self.parent.last_state: self.parent.last_state["vol_a"] = -1
+            if "vol_b" in self.parent.last_state: self.parent.last_state["vol_b"] = -1
         self.parent.draw_image()
 
-class CustomIconRow(Adw.PreferencesRow):
+class CustomIconRow(UIComponentsBase):
     def __init__(self, settings_dict, parent_action, suffix=""):
-        super().__init__()
-        self.settings = settings_dict
-        self.parent = parent_action
+        super().__init__(settings_dict, parent_action)
         self.suffix = f"_{suffix}" if suffix else ""
         
         self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True,
@@ -260,7 +259,7 @@ class CustomIconRow(Adw.PreferencesRow):
         
         # Row 0: Show Icon toggle
         self.toggle_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_bottom=10)
-        lbl_show = Gtk.Label(label=self.parent.plugin_base.lm.get("config.show_icon.title", "Mostrar Icono"), xalign=0, hexpand=True)
+        lbl_show = Gtk.Label(label=self.parent.plugin_base.lm.get("config.show_icon.title", "Show Icon"), xalign=0, hexpand=True)
         self.switch_show = Gtk.Switch()
         self.switch_show.set_valign(Gtk.Align.CENTER)
         self.switch_show.set_active(self.settings.get(f"show_icon{self.suffix}", True))
@@ -289,11 +288,7 @@ class CustomIconRow(Adw.PreferencesRow):
         self.wh_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.wh_box)
         
-        self.defaults_calc = {}
-        if hasattr(self.parent, "get_calculated_defaults"):
-            self.defaults_calc = self.parent.get_calculated_defaults()
 
-        self._updating = True
 
         h_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.size.height"), margin_end=5)
         self.h_spin = Gtk.SpinButton.new_with_range(-2000, 2000, 1)
@@ -311,22 +306,13 @@ class CustomIconRow(Adw.PreferencesRow):
         self.out_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.out_box)
         
-        out_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.outline.width", "Ancho del contorno"), margin_end=5)
+        out_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.outline.width", "Outline Width"), margin_end=5)
         self.out_spin = Gtk.SpinButton.new_with_range(0, 20, 1)
         self.out_spin.set_value(self.settings.get(f"icon_out_width{self.suffix}", 1))
         self.out_spin.connect("value-changed", self.on_change)
         
-        out_color_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.outline.color", "Color del contorno"), margin_start=15, margin_end=5)
-        self.out_color_btn = Gtk.ColorButton()
-        if f"icon_out_color{self.suffix}" in self.settings:
-            c = Gdk.RGBA()
-            c.parse(self.settings[f"icon_out_color{self.suffix}"])
-            self.out_color_btn.set_rgba(c)
-        else:
-            c = Gdk.RGBA()
-            c.parse("#000000")
-            self.out_color_btn.set_rgba(c)
-        self.out_color_btn.connect("color-set", self.on_change)
+        out_color_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.outline.color", "Outline Color"), margin_start=15, margin_end=5)
+        self.out_color_btn = self.create_color_button(f"icon_out_color{self.suffix}", "#000000", self.on_change)
         
         self.out_box.append(out_lbl)
         self.out_box.append(self.out_spin)
@@ -362,17 +348,7 @@ class CustomIconRow(Adw.PreferencesRow):
         
         self._updating = False
 
-    def reset_val(self, key, spin):
-        if key in self.settings:
-            del self.settings[key]
-        self._updating = True
-        spin.set_value(self.defaults_calc.get(key, 0))
-        self._updating = False
-        self.parent.set_settings(self.settings)
-        if hasattr(self.parent, "last_state"):
-            self.parent.last_state["vol"] = -1
-        self.parent.draw_image()
-        
+
     def on_btn_file_clicked(self, btn):
         media_path = self.settings.get(f"icon_path{self.suffix}", "")
         GLib.idle_add(gl.app.let_user_select_asset, media_path, self.on_media_selected)
@@ -398,32 +374,20 @@ class CustomIconRow(Adw.PreferencesRow):
     def on_change(self, *args):
         if getattr(self, "_updating", False): return
         
-        def save_or_del(key, val):
-            if val == self.defaults_calc.get(key):
-                self.settings.pop(key, None)
-            else:
-                self.settings[key] = val
-
-        save_or_del(f"icon_height{self.suffix}", int(self.h_spin.get_value()))
-        save_or_del(f"icon_x{self.suffix}", int(self.x_spin.get_value()))
-        save_or_del(f"icon_y{self.suffix}", int(self.y_spin.get_value()))
-        save_or_del(f"icon_out_width{self.suffix}", int(self.out_spin.get_value()))
+        self.save_or_del(f"icon_height{self.suffix}", int(self.h_spin.get_value()))
+        self.save_or_del(f"icon_x{self.suffix}", int(self.x_spin.get_value()))
+        self.save_or_del(f"icon_y{self.suffix}", int(self.y_spin.get_value()))
+        self.save_or_del(f"icon_out_width{self.suffix}", int(self.out_spin.get_value()))
         
         rgba_out = self.out_color_btn.get_rgba()
-        self.settings[f"icon_out_color{self.suffix}"] = f"#{int(rgba_out.red*255):02x}{int(rgba_out.green*255):02x}{int(rgba_out.blue*255):02x}"
+        self.settings[f"icon_out_color{self.suffix}"] = PipeWireActionBase.rgba_to_hex(rgba_out)
         
         self.parent.set_settings(self.settings)
         self.parent.draw_image()
 
-class CustomBarRow(Adw.PreferencesRow):
+class CustomBarRow(UIComponentsBase):
     def __init__(self, settings_dict, parent_action):
-        super().__init__()
-        self.settings = settings_dict
-        self.parent = parent_action
-        
-        self.defaults_calc = {}
-        if hasattr(self.parent, "get_calculated_defaults"):
-            self.defaults_calc = self.parent.get_calculated_defaults()
+        super().__init__(settings_dict, parent_action)
         
         self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True,
                                 margin_start=15, margin_end=15, margin_top=15, margin_bottom=15)
@@ -436,14 +400,14 @@ class CustomBarRow(Adw.PreferencesRow):
         self.style_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_bottom=6)
         self.main_box.append(self.style_box)
         
-        style_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.style", "Estilo"), xalign=0, margin_end=10)
+        style_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.style", "Style"), xalign=0, margin_end=10)
         self.style_box.append(style_lbl)
         
         self.style_combo = Gtk.ComboBoxText(hexpand=True)
-        self.style_combo.append("0", self.parent.plugin_base.lm.get("config.bar.style.2bars", "2 Barras"))
-        self.style_combo.append("1", self.parent.plugin_base.lm.get("config.bar.style.1bar", "1 Barra"))
-        self.style_combo.append("2", self.parent.plugin_base.lm.get("config.bar.style.1bar_tri", "1 Barra con Triángulo"))
-        self.style_combo.append("3", self.parent.plugin_base.lm.get("config.bar.style.1bar_line", "1 Barra con Línea"))
+        self.style_combo.append("0", self.parent.plugin_base.lm.get("config.bar.style.2bars", "2 Bars"))
+        self.style_combo.append("1", self.parent.plugin_base.lm.get("config.bar.style.1bar", "1 Bar"))
+        self.style_combo.append("2", self.parent.plugin_base.lm.get("config.bar.style.1bar_tri", "1 Bar with Triangle"))
+        self.style_combo.append("3", self.parent.plugin_base.lm.get("config.bar.style.1bar_line", "1 Bar with Line"))
         self.style_combo.set_active_id(str(self.settings.get("bar_style", 0)))
         self.style_combo.connect("changed", self.on_change)
         self.style_box.append(self.style_combo)
@@ -455,80 +419,35 @@ class CustomBarRow(Adw.PreferencesRow):
         color_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.color"), margin_end=5)
         self.color_box.append(color_lbl)
         
-        self.color_btn = Gtk.ColorButton()
-        if "bar_color" in self.settings:
-            c = Gdk.RGBA()
-            c.parse(self.settings["bar_color"])
-            self.color_btn.set_rgba(c)
-        else:
-            c = Gdk.RGBA()
-            c.parse("#FFFFFF")
-            self.color_btn.set_rgba(c)
-        self.color_btn.connect("color-set", self.on_change)
+        self.color_btn = self.create_color_button("bar_color", "#FFFFFF", self.on_change)
         self.color_box.append(self.color_btn)
         
         # Background Color
         bg_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.background"), margin_start=15, margin_end=5)
         self.color_box.append(bg_lbl)
-        self.bg_color_btn = Gtk.ColorButton()
-        if "bar_bg_color" in self.settings:
-            c = Gdk.RGBA()
-            c.parse(self.settings["bar_bg_color"])
-            self.bg_color_btn.set_rgba(c)
-        else:
-            c = Gdk.RGBA()
-            c.parse("#424242")
-            self.bg_color_btn.set_rgba(c)
-        self.bg_color_btn.connect("color-set", self.on_change)
+        self.bg_color_btn = self.create_color_button("bar_bg_color", "#424242", self.on_change)
         self.color_box.append(self.bg_color_btn)
 
         # Over-limit Color
         over_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.over100"), margin_start=15, margin_end=5)
         self.color_box.append(over_lbl)
-        self.over_color_btn = Gtk.ColorButton()
-        if "bar_over_color" in self.settings:
-            c = Gdk.RGBA()
-            c.parse(self.settings["bar_over_color"])
-            self.over_color_btn.set_rgba(c)
-        else:
-            c = Gdk.RGBA()
-            c.parse("#ff4b4b")
-            self.over_color_btn.set_rgba(c)
-        self.over_color_btn.connect("color-set", self.on_change)
+        self.over_color_btn = self.create_color_button("bar_over_color", "#ff4b4b", self.on_change)
         self.color_box.append(self.over_color_btn)
 
         # Colors Box 2
         self.color_box_2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.color_box_2)
         
-        ind_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.ind_color", "Color del indicador"), margin_end=5)
+        ind_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.ind_color", "Indicator Color"), margin_end=5)
         self.color_box_2.append(ind_lbl)
         
-        self.ind_color_btn = Gtk.ColorButton()
-        if "bar_ind_color" in self.settings:
-            c = Gdk.RGBA()
-            c.parse(self.settings["bar_ind_color"])
-            self.ind_color_btn.set_rgba(c)
-        else:
-            c = Gdk.RGBA()
-            c.parse("#FFFFFF")
-            self.ind_color_btn.set_rgba(c)
-        self.ind_color_btn.connect("color-set", self.on_change)
+        self.ind_color_btn = self.create_color_button("bar_ind_color", "#FFFFFF", self.on_change)
         self.color_box_2.append(self.ind_color_btn)
         
-        neu_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.neu_color", "Color neutro"), margin_start=15, margin_end=5)
+        neu_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.bar.neu_color", "Neutral Color"), margin_start=15, margin_end=5)
         self.color_box_2.append(neu_lbl)
         
-        self.neu_color_btn = Gtk.ColorButton()
-        if "bar_neu_color" in self.settings:
-            c = Gdk.RGBA()
-            c.parse(self.settings["bar_neu_color"])
-            self.neu_color_btn.set_rgba(c)
-        else:
-            c = Gdk.RGBA()
-            c.parse("#808080")
-            self.neu_color_btn.set_rgba(c)
-        self.neu_color_btn.connect("color-set", self.on_change)
+        self.neu_color_btn = self.create_color_button("bar_neu_color", "#808080", self.on_change)
         self.color_box_2.append(self.neu_color_btn)
 
         # Outline Box
@@ -541,17 +460,7 @@ class CustomBarRow(Adw.PreferencesRow):
         self.out_spin.connect("value-changed", self.on_change)
         
         out_color_lbl = Gtk.Label(label=self.parent.plugin_base.lm.get("config.outline.color", "Color del contorno"), margin_start=15, margin_end=5)
-        self.out_color_btn = Gtk.ColorButton()
-        if "bar_out_color" in self.settings:
-            c = Gdk.RGBA()
-            c.parse(self.settings["bar_out_color"])
-            self.out_color_btn.set_rgba(c)
-        else:
-            c = Gdk.RGBA()
-            c.parse(self.defaults_calc.get("bar_out_color", "#000000"))
-            self.out_color_btn.set_rgba(c)
-        self.out_color_btn.connect("color-set", self.on_change)
-        
+        self.out_color_btn = self.create_color_button("bar_out_color", self.defaults_calc.get("bar_out_color", "#000000"), self.on_change)
         self.out_box.append(out_lbl)
         self.out_box.append(self.out_spin)
         self.out_box.append(out_color_lbl)
@@ -633,7 +542,8 @@ class CustomBarRow(Adw.PreferencesRow):
         self._updating = False
         self.parent.set_settings(self.settings)
         if hasattr(self.parent, "last_state"):
-            self.parent.last_state["vol"] = -1
+            if "vol_a" in self.parent.last_state: self.parent.last_state["vol_a"] = -1
+            if "vol_b" in self.parent.last_state: self.parent.last_state["vol_b"] = -1
         self.parent.draw_image()
 
     def on_change(self, *args):
@@ -643,40 +553,35 @@ class CustomBarRow(Adw.PreferencesRow):
             self.settings["bar_style"] = int(self.style_combo.get_active_id() or 0)
             
         rgba = self.color_btn.get_rgba()
-        self.settings["bar_color"] = f"#{int(rgba.red*255):02x}{int(rgba.green*255):02x}{int(rgba.blue*255):02x}"
+        self.settings["bar_color"] = PipeWireActionBase.rgba_to_hex(rgba)
         
         rgba_bg = self.bg_color_btn.get_rgba()
-        self.settings["bar_bg_color"] = f"#{int(rgba_bg.red*255):02x}{int(rgba_bg.green*255):02x}{int(rgba_bg.blue*255):02x}"
+        self.settings["bar_bg_color"] = PipeWireActionBase.rgba_to_hex(rgba_bg)
 
         rgba_over = self.over_color_btn.get_rgba()
-        self.settings["bar_over_color"] = f"#{int(rgba_over.red*255):02x}{int(rgba_over.green*255):02x}{int(rgba_over.blue*255):02x}"
+        self.settings["bar_over_color"] = PipeWireActionBase.rgba_to_hex(rgba_over)
 
         if hasattr(self, "ind_color_btn"):
             rgba_ind = self.ind_color_btn.get_rgba()
-            self.settings["bar_ind_color"] = f"#{int(rgba_ind.red*255):02x}{int(rgba_ind.green*255):02x}{int(rgba_ind.blue*255):02x}"
+            self.settings["bar_ind_color"] = PipeWireActionBase.rgba_to_hex(rgba_ind)
             
         if hasattr(self, "neu_color_btn"):
             rgba_neu = self.neu_color_btn.get_rgba()
-            self.settings["bar_neu_color"] = f"#{int(rgba_neu.red*255):02x}{int(rgba_neu.green*255):02x}{int(rgba_neu.blue*255):02x}"
+            self.settings["bar_neu_color"] = PipeWireActionBase.rgba_to_hex(rgba_neu)
 
         rgba_out = self.out_color_btn.get_rgba()
-        self.settings["bar_out_color"] = f"#{int(rgba_out.red*255):02x}{int(rgba_out.green*255):02x}{int(rgba_out.blue*255):02x}"
+        self.settings["bar_out_color"] = PipeWireActionBase.rgba_to_hex(rgba_out)
         self.settings["bar_out_width"] = int(self.out_spin.get_value())
 
-        def save_or_del(key, val):
-            if val == self.defaults_calc.get(key, 0):
-                self.settings.pop(key, None)
-            else:
-                self.settings[key] = val
-
-        save_or_del("bar_width", int(self.w_spin.get_value()))
-        save_or_del("bar_height", int(self.h_spin.get_value()))
-        save_or_del("bar_x", int(self.x_spin.get_value()))
-        save_or_del("bar_y", int(self.y_spin.get_value()))
-        save_or_del("bar_radius", int(self.rad_spin.get_value()))
+        self.save_or_del("bar_width", int(self.w_spin.get_value()))
+        self.save_or_del("bar_height", int(self.h_spin.get_value()))
+        self.save_or_del("bar_x", int(self.x_spin.get_value()))
+        self.save_or_del("bar_y", int(self.y_spin.get_value()))
+        self.save_or_del("bar_radius", int(self.rad_spin.get_value()))
         self.parent.set_settings(self.settings)
         if hasattr(self.parent, "last_state"):
-            self.parent.last_state["vol"] = -1
+            if "vol_a" in self.parent.last_state: self.parent.last_state["vol_a"] = -1
+            if "vol_b" in self.parent.last_state: self.parent.last_state["vol_b"] = -1
         self.parent.draw_image()
 
 class DeviceConfigGroup(Adw.PreferencesGroup):
@@ -720,7 +625,6 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
         self.auto_index_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10, margin_top=5)
         ai_lbl = Gtk.Label(label=lm.get("config.auto_index.title", "Auto-index #"), xalign=0, margin_end=10, hexpand=True)
         ai_lbl.set_tooltip_text(lm.get("config.auto_index.subtitle", "0 = disabled. Used for apps"))
-        self.outline_spin = Gtk.SpinButton(adjustment=Gtk.Adjustment(value=settings.get("bar_out_width", 1), lower=0, upper=10, step_increment=1))
         self.auto_index_spin = Gtk.SpinButton(adjustment=Gtk.Adjustment(value=settings.get(f"auto_index{self.suffix_str}", 0), lower=0, upper=10, step_increment=1))
         self.auto_index_spin.connect("value-changed", self.on_auto_index_changed)
         self.auto_index_box.append(ai_lbl)
@@ -766,8 +670,9 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
                     items = [d for d in pulse.source_list() if not getattr(d, 'name', '').endswith('.monitor') and not getattr(d, 'description', '').startswith('Monitor of')]
                 else:
                     items = self.parent_action.get_active_applications()
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).debug("Error updating device model: %s", e)
 
         selected_id = default_id
         found = False
@@ -825,12 +730,12 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
 
     def on_auto_index_changed(self, spin):
         settings = self.parent_action.get_settings()
-        settings[f"auto_index{self.suffix_str}"] = spin.get_value()
+        settings[f"auto_index{self.suffix_str}"] = int(spin.get_value())
         self.parent_action.set_settings(settings)
         self.parent_action.draw_image()
 
     def on_limit_changed(self, spin):
         settings = self.parent_action.get_settings()
-        settings[f"volume_limit{self.suffix_str}"] = spin.get_value()
+        settings[f"volume_limit{self.suffix_str}"] = int(spin.get_value())
         self.parent_action.set_settings(settings)
         self.parent_action.draw_image()

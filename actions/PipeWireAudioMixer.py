@@ -17,7 +17,8 @@ from PIL import Image
 import traceback
 
 from .PipeWireActionBase import PipeWireActionBase, HAS_RSVG
-from .UIComponents import CustomLabelRow, CustomIconRow, CustomBarRow, DeviceConfigGroup
+from .UIComponents import CustomLabelRow, CustomIconRow, CustomBarRow, DeviceConfigGroup, VolumeMonitorConfigRow
+from .PeakMonitor import PeakMonitor
 
 class PipeWireAudioMixer(PipeWireActionBase):
     def __init__(self, *args, **kwargs):
@@ -51,6 +52,10 @@ class PipeWireAudioMixer(PipeWireActionBase):
         self.internal_balance = 50.0
         import time
         self.last_tick_time = 0
+        
+        self.peak_monitor = PeakMonitor()
+        self._monitor_display_active = False
+        self._last_interaction_time = time.time()
 
     def get_active_devices_and_mode(self):
         dev_a = self.get_target_device("a")
@@ -66,12 +71,26 @@ class PipeWireAudioMixer(PipeWireActionBase):
     def on_tick(self):
         import time
         current_time = time.time()
-        if current_time - getattr(self, 'last_tick_time', 0) < 0.2:
+        
+        settings = self.get_settings()
+        monitor_enabled = settings.get("monitor_enabled", False)
+        monitor_delay = settings.get("monitor_delay", 5)
+        monitor_fps = settings.get("monitor_fps", 10)
+        
+        time_since_interaction = current_time - self._last_interaction_time
+        should_monitor_pre = monitor_enabled and time_since_interaction >= monitor_delay and getattr(self, "_last_single_mode", True)
+        
+        tick_interval = 1.0 / monitor_fps if should_monitor_pre else 0.2
+        
+        if current_time - getattr(self, 'last_tick_time', 0) < tick_interval:
             return
         self.last_tick_time = current_time
 
         try:
             dev_a, dev_b, is_single_mode = self.get_active_devices_and_mode()
+            self._last_single_mode = is_single_mode
+            
+            should_monitor = monitor_enabled and time_since_interaction >= monitor_delay and is_single_mode
                 
             with self.plugin_base.pulse_lock:
                 vol_a = int(round(self.get_pulse().volume_get_all_chans(dev_a) * 100)) if dev_a else 0
@@ -89,14 +108,24 @@ class PipeWireAudioMixer(PipeWireActionBase):
                        self.last_state["muted_b"] != mut_b or
                        self.last_state["dev_a"] != nm_a or
                        self.last_state["dev_b"] != nm_b)
-                       
-            if changed:
+            
+            if should_monitor:
+                self.peak_monitor.start(dev_a)
+            else:
+                if self.peak_monitor._running:
+                    self.peak_monitor.stop()
+
+            force_draw = should_monitor and self.peak_monitor._running
+
+            if changed or force_draw or self._monitor_display_active != should_monitor:
+                self._monitor_display_active = should_monitor and self.peak_monitor._running
+                
                 self.last_state.update({
                     "vol_a": vol_a, "vol_b": vol_b,
                     "muted_a": mut_a, "muted_b": mut_b,
                     "dev_a": nm_a, "dev_b": nm_b
                 })
-                settings = self.get_settings()
+                
                 lim_a = min(150.0, float(settings.get("volume_limit_a", 100)))
                 lim_b = min(150.0, float(settings.get("volume_limit_b", 100)))
                 pct_a = vol_a / lim_a if lim_a > 0 else 0
@@ -116,6 +145,14 @@ class PipeWireAudioMixer(PipeWireActionBase):
 
     def on_ready(self):
         self.draw_image()
+        import gi
+        gi.require_version('GLib', '2.0')
+        from gi.repository import GLib
+        GLib.timeout_add(40, self.on_fast_tick)
+
+    def on_fast_tick(self):
+        self.on_tick()
+        return True
 
     def get_target_device(self, suffix):
         settings = self.get_settings()
@@ -253,14 +290,19 @@ class PipeWireAudioMixer(PipeWireActionBase):
             return Image.new("RGBA", (target_h, target_h), (0, 0, 0, 0))
 
     def on_toggle_mute(self, data=None):
+        import time
+        self._last_interaction_time = time.time()
         dev_a, dev_b, is_single_mode = self.get_active_devices_and_mode()
             
         with self.plugin_base.pulse_lock:
             if dev_a: self.get_pulse().mute(dev_a, not dev_a.mute)
             if dev_b: self.get_pulse().mute(dev_b, not dev_b.mute)
-        self.draw_image()
+        self.last_tick_time = 0
+        self.on_tick()
 
     def change_balance(self, amount):
+        import time
+        self._last_interaction_time = time.time()
         settings = self.get_settings()
         limit_a = min(150.0, float(settings.get("volume_limit_a", 100)))
         limit_b = min(150.0, float(settings.get("volume_limit_b", 100)))
@@ -312,7 +354,8 @@ class PipeWireAudioMixer(PipeWireActionBase):
             else:
                 self.internal_balance = 100.0 - (50.0 * pct_a)
             
-        self.draw_image()
+        self.last_tick_time = 0
+        self.on_tick()
 
     def on_volume_up(self, data=None):
         step = float(self.get_settings().get("volume_step", 5))
@@ -350,15 +393,23 @@ class PipeWireAudioMixer(PipeWireActionBase):
             bar_style = 1
             
         bar_h_each = settings.get("bar_height", defs["bar_height"])
-        if not is_single_mode and bar_style == 0:
-            bar_h_each = max(1, (bar_h_each - 2) // 2)
+        
+        is_monitor_active = getattr(self, "_monitor_display_active", False) and getattr(self, "peak_monitor", None)
+        mon_bar_mode = int(settings.get("monitor_bar_mode", 0))
+        
+        if is_monitor_active:
+            if mon_bar_mode != 0:
+                bar_h_each = max(1, (bar_h_each - 2) // 2)
+        else:
+            if not is_single_mode and bar_style == 0:
+                bar_h_each = max(1, (bar_h_each - 2) // 2)
 
         bar_x = settings.get("bar_x", defs["bar_x"])
         base_bar_y = settings.get("bar_y", defs["bar_y"])
         bar_w = settings.get("bar_width", defs["bar_width"])
         bar_rad = settings.get("bar_radius", defs["bar_radius"])
         
-        if not is_single_mode and bar_style == 0:
+        if (is_monitor_active and mon_bar_mode != 0) or (not is_monitor_active and not is_single_mode and bar_style == 0):
             bar_rad /= 2.0
         bar_rad = min(bar_rad, bar_h_each / 2.0)
 
@@ -445,7 +496,111 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 self.draw_rounded_rect(ctx, bar_x, y_offset, bar_w, bar_h_each, bar_rad)
                 ctx.stroke()
 
-        if bar_style == 0 and not is_single_mode:
+        def draw_monitor_meter(y_offset, peak_db, rms_db, width, rad):
+            draw_bar_background(y_offset)
+            
+            invert = settings.get("monitor_invert", False)
+            
+            cmode = int(settings.get("monitor_color_mode", 0))
+            min_db = -60.0
+            max_db = 0.0
+            pct = (peak_db - min_db) / (max_db - min_db)
+            pct = max(0.0, min(1.0, pct))
+            
+            fill_w = int(width * pct)
+            if fill_w > 0:
+                rad_fill = rad if fill_w > rad * 2 else fill_w / 2
+                fill_x = (bar_x + width - fill_w) if invert else bar_x
+                
+                if cmode == 0:
+                    c_fill = self._parse_color(settings.get("monitor_color_solid", "#ffffff"))
+                    draw_fill(fill_x, fill_w, rad_fill, c_fill, y_offset)
+                else:
+                    self.draw_rounded_rect_custom(ctx, fill_x, y_offset, fill_w, bar_h_each, rad_fill, rad_fill, rad_fill, rad_fill)
+                    if invert:
+                        lg = cairo.LinearGradient(bar_x + width, 0, bar_x, 0)
+                    else:
+                        lg = cairo.LinearGradient(bar_x, 0, bar_x + width, 0)
+                    if cmode == 1:
+                        c_low = self._parse_color(settings.get("monitor_color_low", "#00ff00"))
+                        c_mid = self._parse_color(settings.get("monitor_color_mid", "#ffff00"))
+                        c_high = self._parse_color(settings.get("monitor_color_high", "#ff0000"))
+                        t_mid = float(settings.get("monitor_threshold_mid", -20))
+                        t_high = float(settings.get("monitor_threshold_high", -9))
+                        
+                        pct_mid = max(0.0, min(1.0, (t_mid - min_db) / (max_db - min_db)))
+                        pct_high = max(0.0, min(1.0, (t_high - min_db) / (max_db - min_db)))
+                        
+                        lg.add_color_stop_rgba(0.0, *c_low)
+                        lg.add_color_stop_rgba(max(0.0, pct_mid-0.001), *c_low)
+                        lg.add_color_stop_rgba(pct_mid, *c_mid)
+                        lg.add_color_stop_rgba(max(0.0, pct_high-0.001), *c_mid)
+                        lg.add_color_stop_rgba(pct_high, *c_high)
+                    elif cmode == 2:
+                        stops = int(settings.get("monitor_gradient_stops", 3))
+                        default_colors = ["#00ff00", "#ffff00", "#ff0000", "#00ffff", "#ffff00", "#ff00ff"]
+                        colors = []
+                        for i in range(stops):
+                            c = self._parse_color(settings.get(f"monitor_gradient_{i+1}", default_colors[i]))
+                            colors.append(c)
+                            
+                        for i, c in enumerate(colors):
+                            lg.add_color_stop_rgba(i / (stops - 1), *c)
+                            
+                    ctx.set_source(lg)
+                    ctx.fill()
+            draw_outline(y_offset)
+            
+            if settings.get("monitor_show_rms", False):
+                pct_rms = (rms_db - min_db) / (max_db - min_db)
+                pct_rms = max(0.0, min(1.0, pct_rms))
+                
+                if invert:
+                    rms_x = bar_x + width - int(width * pct_rms)
+                    rms_x = min(bar_x + width - 1, max(bar_x + 1, rms_x))
+                else:
+                    rms_x = bar_x + int(width * pct_rms)
+                    rms_x = min(bar_x + width - 2, max(bar_x, rms_x - 1))
+                
+                c_rms = self._parse_color(settings.get("monitor_rms_color", "#FFFFFF"))
+                
+                rms_out_w = float(settings.get("monitor_rms_out_width", 1.0))
+                if rms_out_w > 0:
+                    c_rms_out = self._parse_color(settings.get("monitor_rms_out_color", "#000000"))
+                    ctx.set_source_rgba(*c_rms_out)
+                    ctx.set_line_width(2.0 + (rms_out_w * 2))
+                    ctx.move_to(rms_x, y_offset)
+                    ctx.line_to(rms_x, y_offset + bar_h_each)
+                    ctx.stroke()
+                    
+                ctx.set_source_rgba(*c_rms)
+                ctx.set_line_width(2.0)
+                ctx.move_to(rms_x, y_offset)
+                ctx.line_to(rms_x, y_offset + bar_h_each)
+                ctx.stroke()
+
+        if getattr(self, "_monitor_display_active", False) and getattr(self, "peak_monitor", None):
+            (peak_l, peak_r), (rms_l, rms_r) = self.peak_monitor.get_peak()
+            
+            is_muted_a = self.last_state.get("muted_a", False)
+            is_muted_b = self.last_state.get("muted_b", False)
+            
+            if mon_bar_mode == 0:
+                if is_muted_a:
+                    peak_l = peak_r = rms_l = rms_r = 0.0
+                peak_db = PeakMonitor.linear_to_db((peak_l + peak_r) / 2.0)
+                rms_db = PeakMonitor.linear_to_db((rms_l + rms_r) / 2.0)
+                draw_monitor_meter(base_bar_y, peak_db, rms_db, bar_w, bar_rad)
+            else:
+                if is_muted_a: peak_l = peak_r = rms_l = rms_r = 0.0
+                peak_l_db = PeakMonitor.linear_to_db(peak_l)
+                peak_r_db = PeakMonitor.linear_to_db(peak_r)
+                rms_l_db = PeakMonitor.linear_to_db(rms_l)
+                rms_r_db = PeakMonitor.linear_to_db(rms_r)
+                draw_monitor_meter(base_bar_y, peak_l_db, rms_l_db, bar_w, bar_rad)
+                draw_monitor_meter(base_bar_y + bar_h_each + 2, peak_r_db, rms_r_db, bar_w, bar_rad)
+                
+        elif bar_style == 0 and not is_single_mode:
             def draw_legacy_bar(y_offset, dev, limit, invert=False):
                 draw_bar_background(y_offset)
                 if dev:
@@ -471,14 +626,16 @@ class PipeWireAudioMixer(PipeWireActionBase):
                         draw_fill(start_x, over_fill_w, rad, c_over, y_offset)
                 draw_outline(y_offset)
 
+            bar_invert = settings.get("bar_invert", False)
             limit_a = min(150.0, float(settings.get("volume_limit_a", 100)))
             limit_b = min(150.0, float(settings.get("volume_limit_b", 100)))
-            draw_legacy_bar(base_bar_y, dev_a, limit_a, invert=True)
-            draw_legacy_bar(base_bar_y + bar_h_each + 2, dev_b, limit_b, invert=False)
+            draw_legacy_bar(base_bar_y, dev_a, limit_a, invert=not bar_invert)
+            draw_legacy_bar(base_bar_y + bar_h_each + 2, dev_b, limit_b, invert=bar_invert)
         else:
             y_offset = base_bar_y
             draw_bar_background(y_offset)
             
+            bar_invert = settings.get("bar_invert", False)
             fill_start_x = bar_x
             fill_w = 0
             over_fill_w = 0
@@ -499,8 +656,15 @@ class PipeWireAudioMixer(PipeWireActionBase):
                     fill_w = min(bar_w, fill_w)
                     
                     over_fill_w = int(bar_w * (over_vol / 100.0))
-                    over_start_x = bar_x
-                    marker_x = bar_x + fill_w
+                    
+                    if bar_invert:
+                        fill_start_x = bar_x + bar_w - fill_w
+                        over_start_x = bar_x + bar_w - over_fill_w
+                        marker_x = bar_x + bar_w - fill_w
+                    else:
+                        fill_start_x = bar_x
+                        over_start_x = bar_x
+                        marker_x = bar_x + fill_w
             else:
                 balance = self.internal_balance
                 center_x = bar_x + bar_w / 2.0
@@ -699,7 +863,27 @@ class PipeWireAudioMixer(PipeWireActionBase):
         elif pct_format == 5:
             pct_str = ""
             
-        if pct_format != 5:
+        if getattr(self, "_monitor_display_active", False) and settings.get("monitor_show_db", False) and getattr(self, "peak_monitor", None):
+            is_muted_a = self.last_state.get("muted_a", False)
+            is_muted_b = self.last_state.get("muted_b", False)
+            
+            if is_single_mode and is_muted_a:
+                pct_str = "--"
+            elif not is_single_mode and is_muted_a and is_muted_b:
+                pct_str = "--"
+            else:
+                (peak_l, peak_r), (rms_l, rms_r) = self.peak_monitor.get_peak()
+                if is_muted_a: peak_l = 0.0
+                if not is_single_mode and is_muted_b: peak_r = 0.0
+                
+                avg_peak = (peak_l + peak_r) / 2.0
+                peak_db = PeakMonitor.linear_to_db(avg_peak)
+                if peak_db <= -60:
+                    pct_str = "-inf dB"
+                else:
+                    pct_str = f"{peak_db:.1f} dB"
+            draw_text_section("pct", pct_str, int(height * 0.28))
+        elif pct_format != 5:
             draw_text_section("pct", pct_str, int(height * 0.28))
 
         # Composite everything
@@ -808,6 +992,10 @@ class PipeWireAudioMixer(PipeWireActionBase):
             self.exp_icon_b = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.icon.format", "Icon Format") + " B")
             self.exp_icon_b.add_row(CustomIconRow(settings, self, "b"))
             grp_misc.add(self.exp_icon_b)
+            
+            self.exp_monitor = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.monitor.title", "Volume Monitor"))
+            self.exp_monitor.add_row(VolumeMonitorConfigRow(settings, self))
+            grp_misc.add(self.exp_monitor)
 
             self.exp_dev_b.set_visible(settings.get("dual_mode", False))
             self.exp_icon_b.set_visible(settings.get("dual_mode", False))

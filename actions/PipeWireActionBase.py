@@ -19,6 +19,14 @@ class PipeWireActionBase(ActionBase):
         self.icon_cache = {}
         self.MAX_ICON_CACHE_SIZE = 50
         
+    def get_settings(self):
+        settings = super().get_settings()
+        if isinstance(settings, tuple):
+            settings = settings[0] if len(settings) > 0 else {}
+        if not isinstance(settings, dict):
+            settings = {}
+        return settings
+        
     def safe_pulse_call(self, fn, *args, **kwargs):
         pulse = self.get_pulse()
         if not pulse:

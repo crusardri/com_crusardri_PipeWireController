@@ -1,0 +1,3 @@
+# No external dependencies required.
+# PeakMonitor uses parecord (from pulseaudio-utils, available in Flatpak runtime).
+# pulsectl is already a dependency of StreamController itself.

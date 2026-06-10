@@ -922,7 +922,12 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         rms_color_lbl = Gtk.Label(label=lm.get("config.monitor.rms_color", "Indicator Color"), margin_end=5)
         self.btn_rms_color = self.create_color_button("monitor_rms_color", "#FFFFFF", self.on_change)
         
-        rms_out_w_lbl = Gtk.Label(label=lm.get("config.outline.width", "Outline Width"), margin_start=15, margin_end=5)
+        self.brms_options.append(rms_color_lbl)
+        self.brms_options.append(self.btn_rms_color)
+        
+        self.brms_options2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
+        
+        rms_out_w_lbl = Gtk.Label(label=lm.get("config.outline.width", "Outline Width"), margin_end=5)
         self.spin_rms_out = Gtk.SpinButton.new_with_range(0, 10, 1)
         self.spin_rms_out.set_value(self.settings.get("monitor_rms_out_width", 1.0))
         self.spin_rms_out.connect("value-changed", self.on_change)
@@ -930,14 +935,13 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         rms_out_color_lbl = Gtk.Label(label=lm.get("config.outline.color", "Outline Color"), margin_start=15, margin_end=5)
         self.btn_rms_out_color = self.create_color_button("monitor_rms_out_color", "#000000", self.on_change)
         
-        self.brms_options.append(rms_color_lbl)
-        self.brms_options.append(self.btn_rms_color)
-        self.brms_options.append(rms_out_w_lbl)
-        self.brms_options.append(self.spin_rms_out)
-        self.brms_options.append(rms_out_color_lbl)
-        self.brms_options.append(self.btn_rms_out_color)
+        self.brms_options2.append(rms_out_w_lbl)
+        self.brms_options2.append(self.spin_rms_out)
+        self.brms_options2.append(rms_out_color_lbl)
+        self.brms_options2.append(self.btn_rms_out_color)
         
         self.settings_container.append(self.brms_options)
+        self.settings_container.append(self.brms_options2)
         
         # 7. Invert Bar
         binv = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=5)
@@ -979,6 +983,8 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         
         if hasattr(self, "brms_options"):
             self.brms_options.set_sensitive(self.sw_rms.get_active())
+            if hasattr(self, "brms_options2"):
+                self.brms_options2.set_sensitive(self.sw_rms.get_active())
         if cmode == 2: self.on_grad_stops_change()
             
     def on_draw_preview(self, area, cr, width, height):

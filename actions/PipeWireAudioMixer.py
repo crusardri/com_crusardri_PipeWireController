@@ -29,7 +29,7 @@ from .core.pulse_service import PulseService
 from .rendering import icons
 from .rendering.bars import BarRenderer, STYLE_TWO_BARS
 from .rendering.colors import parse_color
-from .rendering.text import FontDefaults, draw_text_section, draw_centered_text, draw_anchored_text
+from .rendering.text import FontDefaults, draw_text_section, draw_centered_text
 from .UIComponents import (CustomLabelRow, CustomIconRow, CustomBarRow,
                            DeviceConfigGroup, VolumeMonitorConfigRow, CarouselConfigRow)
 
@@ -898,7 +898,8 @@ class PipeWireAudioMixer(PipeWireActionBase):
             - Right neighbour: 28 px, 80% opacity
 
         Device name and volume percentage are drawn as text below/above the icons.
-        In dual mode an 'A' or 'B' badge indicates which slot is being assigned.
+        When both devices resolve to different physical devices (mix mode), the
+        percentage is prefixed with "A " or "B " to indicate which slot is active.
         """
         try:
             settings = self.get_settings()
@@ -951,17 +952,12 @@ class PipeWireAudioMixer(PipeWireActionBase):
             draw_text_section(ctx, settings, "carousel_name", current["name"], fd, defs=defs,
                               default_y=defs["pos_y_carousel_name"],
                               margin=margin, default_max_w=width - margin * 2)
-            draw_text_section(ctx, settings, "carousel_pct", f"{vol_pct}%", fd, defs=defs,
+
+            prefix = ("A " if self.carousel_target == "a" else "B ") if settings.get("dual_mode", False) else ""
+            draw_text_section(ctx, settings, "carousel_pct", f"{prefix}{vol_pct}%", fd, defs=defs,
                               default_y=defs["pos_y_carousel_pct"],
                               margin=margin, default_max_w=width - margin * 2,
                               anchor_bottom=True)
-
-            # In dual mode, draw a coloured A/B badge in the bottom-left corner.
-            if settings.get("dual_mode", False):
-                is_a = self.carousel_target == "a"
-                draw_anchored_text(ctx, "A" if is_a else "B", "Sans Bold 20",
-                                   (0, 1, 1, 1) if is_a else (1, 0.5, 0, 1),
-                                   5, height - 5)
 
             cairo_img = self._surface_to_pil(surface, width, height)
             cairo_img.alpha_composite(base_img)

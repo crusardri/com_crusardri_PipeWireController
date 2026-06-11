@@ -1,7 +1,7 @@
-"""Filas de configuración reutilizables (GTK4/Adwaita) para las acciones del plugin.
+"""Reusable configuration rows (GTK4/Adwaita) for plugin actions.
 
-Todas las filas siguen el mismo patrón: leen `self.settings`, escriben en él
-desde `on_change()` y notifican al action padre vía `notify_parent()`.
+All rows follow the same pattern: they read `self.settings`, write to it
+from `on_change()` and notify the parent action via `notify_parent()`.
 """
 import gi
 gi.require_version("Gtk", "4.0")
@@ -15,17 +15,17 @@ from .rendering.colors import rgba_to_hex, DEFAULT_GRADIENT_COLORS
 from .rendering.text import FontDefaults
 
 PCT_FORMAT_LABELS = [
-    "Porcentaje (0%, 50%, 100%)",
-    "Panorámico Porcentaje (-100%, 0%, +100%)",
-    "Panorámico (-100, 0, +100)",
+    "Percentage (0%, 50%, 100%)",
+    "Panoramic Percentage (-100%, 0%, +100%)",
+    "Panoramic (-100, 0, +100)",
     "Crossfade (A 0, A=B, B 0)",
     "Crossfade B (L0, 100, R0)",
-    "Deshabilitado",
+    "Disabled",
 ]
 
 
 class UIComponentsBase(Adw.PreferencesRow):
-    """Base de filas de configuración: settings compartidos, defaults y helpers."""
+    """Base configuration rows: shared settings, defaults and helpers."""
 
     def __init__(self, settings_dict, parent_action):
         super().__init__()
@@ -42,7 +42,7 @@ class UIComponentsBase(Adw.PreferencesRow):
         return self.parent.plugin_base.lm
 
     def notify_parent(self):
-        """Persiste settings y fuerza un redibujado completo del action."""
+        """Persist settings and force a complete redraw of the action."""
         self.parent.set_settings(self.settings)
         if hasattr(self.parent, "invalidate_render"):
             self.parent.invalidate_render()
@@ -59,9 +59,9 @@ class UIComponentsBase(Adw.PreferencesRow):
 
     def create_spin_row(self, box, label_text, key, lo=-2000, hi=2000, step=1,
                         margin_start=0, with_reset=True):
-        """Añade 'etiqueta + spin (+ reset)' a `box` y devuelve el SpinButton.
+        """Adds 'label + spin (+ reset)' to `box` and returns the SpinButton.
 
-        El valor inicial sale de settings con fallback a los defaults calculados.
+        The initial value comes from settings with fallback to calculated defaults.
         """
         box.append(Gtk.Label(label=label_text, margin_start=margin_start, margin_end=5))
         spin = Gtk.SpinButton.new_with_range(lo, hi, step)
@@ -69,7 +69,7 @@ class UIComponentsBase(Adw.PreferencesRow):
         spin.connect("value-changed", self.on_change)
         box.append(spin)
         if with_reset:
-            reset_word = self.lm.get("config.reset", "Restablecer")
+            reset_word = self.lm.get("config.reset", "Reset")
             btn = Gtk.Button(icon_name="edit-undo-symbolic",
                              tooltip_text=f"{reset_word} {label_text}",
                              css_classes=["circular", "flat"])
@@ -78,7 +78,7 @@ class UIComponentsBase(Adw.PreferencesRow):
         return spin
 
     def reset_val(self, key, spin):
-        """Elimina el override y restaura el default calculado."""
+        """Removes the override and restores the calculated default."""
         self.settings.pop(key, None)
         self._updating = True
         spin.set_value(self.defaults_calc.get(key, 0))
@@ -86,7 +86,7 @@ class UIComponentsBase(Adw.PreferencesRow):
         self.notify_parent()
 
     def save_or_del(self, key, val):
-        """Guarda el valor solo si difiere del default (mantiene settings limpios)."""
+        """Saves the value only if it differs from the default (keeps settings clean)."""
         if val == self.defaults_calc.get(key, 0):
             self.settings.pop(key, None)
         else:
@@ -97,7 +97,7 @@ class UIComponentsBase(Adw.PreferencesRow):
 
 
 class GradientConfigBox(Gtk.Box):
-    """Selector de degradado: número de paradas, colores y vista previa."""
+    """Gradient selector: number of stops, colors and preview."""
 
     def __init__(self, prefix, settings, def_colors, on_change_cb, lm):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, margin_top=5)
@@ -106,7 +106,7 @@ class GradientConfigBox(Gtk.Box):
         self.on_change_cb = on_change_cb
 
         bgs = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_bottom=5)
-        bgs.append(Gtk.Label(label=lm.get("config.monitor.gradient_colors", "Colores"),
+        bgs.append(Gtk.Label(label=lm.get("config.monitor.gradient_colors", "Colors"),
                              xalign=0, margin_end=10))
         self.cb_stops = Gtk.ComboBoxText(hexpand=True)
         for i in range(2, 7):
@@ -168,7 +168,7 @@ class GradientConfigBox(Gtk.Box):
 
 
 class ColorModeSelector(Gtk.Box):
-    """Selector de modo de color (sólido / degradado / automático por icono)."""
+    """Color mode selector (solid / gradient / automatic by icon)."""
 
     def __init__(self, prefix, title, settings, lm, def_color, def_colors, on_change_cb, def_darken=50):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, hexpand=True, margin_bottom=10)
@@ -181,10 +181,10 @@ class ColorModeSelector(Gtk.Box):
         row.append(Gtk.Label(label=title, xalign=0, margin_end=10, hexpand=True))
 
         self.cb_mode = Gtk.ComboBoxText()
-        self.cb_mode.append("0", lm.get("config.monitor.color_solid", "Sólido"))
-        self.cb_mode.append("1", lm.get("config.monitor.color_gradient", "Degradado"))
-        self.cb_mode.append("2", lm.get("config.monitor.solid_auto", "Sólido Automático (Icono)"))
-        self.cb_mode.append("3", lm.get("config.monitor.gradient_auto", "Degradado Automático (Icono)"))
+        self.cb_mode.append("0", lm.get("config.monitor.color_solid", "Solid"))
+        self.cb_mode.append("1", lm.get("config.monitor.color_gradient", "Gradient"))
+        self.cb_mode.append("2", lm.get("config.monitor.solid_auto", "Automatic Solid (Icon)"))
+        self.cb_mode.append("3", lm.get("config.monitor.gradient_auto", "Automatic Gradient (Icon)"))
         self.cb_mode.set_active_id(str(self.settings.get(f"{prefix}_color_mode", 0)))
         self.cb_mode.connect("changed", self._on_mode_changed)
         row.append(self.cb_mode)
@@ -200,7 +200,7 @@ class ColorModeSelector(Gtk.Box):
 
         self.box_auto = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, margin_top=5)
         self.append(self.box_auto)
-        self.box_auto.append(Gtk.Label(label=lm.get("config.monitor.darken_auto", "Oscurecer Auto %:"),
+        self.box_auto.append(Gtk.Label(label=lm.get("config.monitor.darken_auto", "Auto Darken %:"),
                                        margin_end=5))
         self.spin_darken = Gtk.SpinButton.new_with_range(0, 100, 5)
         self.spin_darken.set_value(self.settings.get(f"{prefix}_auto_darken", def_darken))
@@ -230,8 +230,8 @@ class ColorModeSelector(Gtk.Box):
 
 
 class CustomLabelRow(UIComponentsBase):
-    """Configuración de un bloque de texto: contenido, fuente, color, alineación,
-    contorno, posición y ancho. Reutilizada por nombre, porcentaje y carrusel."""
+    """Configuration of a text block: content, font, color, alignment,
+    outline, position and width. Reused for name, percentage and carousel."""
 
     def __init__(self, title_text, settings_dict, key_prefix, parent_action, show_text_input=True):
         super().__init__(settings_dict, parent_action)
@@ -270,7 +270,7 @@ class CustomLabelRow(UIComponentsBase):
                 self.entry.connect("changed", self.on_change)
                 text_box.append(self.entry)
 
-        # Fuente y color
+        # Font and color
         font_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(font_box)
         font_box.append(Gtk.Label(label=lm.get("config.font.title"), xalign=0,
@@ -284,7 +284,7 @@ class CustomLabelRow(UIComponentsBase):
         self.color_btn.set_margin_start(10)
         font_box.append(self.color_btn)
 
-        # Alineación
+        # Alignment
         align_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(align_box)
         align_box.append(Gtk.Label(label=lm.get("config.align.title"), xalign=0,
@@ -310,7 +310,7 @@ class CustomLabelRow(UIComponentsBase):
             btn.connect("toggled", self.on_change)
             align_box.append(btn)
 
-        # Contorno
+        # Outline
         out_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(out_box)
         out_box.append(Gtk.Label(label=lm.get("config.outline.title"), xalign=0,
@@ -325,7 +325,7 @@ class CustomLabelRow(UIComponentsBase):
                                                       fd.outline_color, self.on_change)
         out_box.append(self.out_color_btn)
 
-        # Posición y ancho
+        # Position and width
         xy_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(xy_box)
         self.x_spin = self.create_spin_row(xy_box, lm.get("config.pos.x"), f"pos_x_{key_prefix}")
@@ -364,7 +364,7 @@ class CustomLabelRow(UIComponentsBase):
 
 
 class CustomIconRow(UIComponentsBase):
-    """Configuración del icono: visibilidad, archivo, tamaño, contorno y posición."""
+    """Icon configuration: visibility, file, size, outline and position."""
 
     def __init__(self, settings_dict, parent_action, suffix=""):
         super().__init__(settings_dict, parent_action)
@@ -377,7 +377,7 @@ class CustomIconRow(UIComponentsBase):
         self.main_box.append(Gtk.Label(label=lm.get("config.icon.format"), xalign=0,
                                        margin_bottom=3, css_classes=["bold"]))
 
-        # Mostrar icono
+        # Show icon
         toggle_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_bottom=10)
         toggle_box.append(Gtk.Label(label=lm.get("config.show_icon.title", "Show Icon"),
                                     xalign=0, hexpand=True))
@@ -387,7 +387,7 @@ class CustomIconRow(UIComponentsBase):
         toggle_box.append(self.switch_show)
         self.main_box.append(toggle_box)
 
-        # Archivo
+        # File
         file_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
         self.main_box.append(file_box)
         self.btn_file = Gtk.Button(label=lm.get("config.icon.select"))
@@ -403,13 +403,13 @@ class CustomIconRow(UIComponentsBase):
         self.lbl_file.set_max_width_chars(20)
         file_box.append(self.lbl_file)
 
-        # Alto
+        # Height
         wh_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(wh_box)
         self.h_spin = self.create_spin_row(wh_box, lm.get("config.size.height"),
                                            f"icon_height{self.suffix}")
 
-        # Contorno
+        # Outline
         out_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(out_box)
         out_box.append(Gtk.Label(label=lm.get("config.outline.width", "Outline Width"), margin_end=5))
@@ -423,7 +423,7 @@ class CustomIconRow(UIComponentsBase):
                                                       "#000000", self.on_change)
         out_box.append(self.out_color_btn)
 
-        # Posición
+        # Position
         xy_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(xy_box)
         self.x_spin = self.create_spin_row(xy_box, lm.get("config.pos.x"), f"icon_x{self.suffix}")
@@ -461,7 +461,7 @@ class CustomIconRow(UIComponentsBase):
 
 
 class CustomBarRow(UIComponentsBase):
-    """Configuración de la barra: estilo, colores, inversión, contorno y geometría."""
+    """Bar configuration: style, colors, inversion, outline and geometry."""
 
     def __init__(self, settings_dict, parent_action):
         super().__init__(settings_dict, parent_action)
@@ -480,7 +480,7 @@ class CustomBarRow(UIComponentsBase):
         lbl_warn.set_wrap(True)
         self.main_box.append(lbl_warn)
 
-        # Estilo
+        # Style
         style_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_bottom=6)
         self.main_box.append(style_box)
         style_box.append(Gtk.Label(label=lm.get("config.bar.style", "Style"), xalign=0, margin_end=10))
@@ -493,18 +493,18 @@ class CustomBarRow(UIComponentsBase):
         self.style_combo.connect("changed", self.on_change)
         style_box.append(self.style_combo)
 
-        # Colores principales
+        # Main colors
         self.bar_color_sel = ColorModeSelector(
-            "bar", lm.get("config.bar.color", "Color de la barra"), self.settings, lm,
+            "bar", lm.get("config.bar.color", "Bar Color"), self.settings, lm,
             "#ffffff", DEFAULT_GRADIENT_COLORS, self.on_change, def_darken=0)
         self.main_box.append(self.bar_color_sel)
 
         self.bg_color_sel = ColorModeSelector(
-            "bar_bg", lm.get("config.bar.background", "Color de fondo"), self.settings, lm,
+            "bar_bg", lm.get("config.bar.background", "Background Color"), self.settings, lm,
             "#424242", DEFAULT_GRADIENT_COLORS, self.on_change, def_darken=50)
         self.main_box.append(self.bg_color_sel)
 
-        # Colores secundarios
+        # Secondary colors
         color_box_2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(color_box_2)
         color_box_2.append(Gtk.Label(label=lm.get("config.bar.over100"), margin_end=5))
@@ -520,7 +520,7 @@ class CustomBarRow(UIComponentsBase):
         self.neu_color_btn = self.create_color_button("bar_neu_color", "#808080", self.on_change)
         color_box_2.append(self.neu_color_btn)
 
-        # Invertir
+        # Invert
         invert_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(invert_box)
         invert_box.append(Gtk.Label(label=lm.get("config.bar.invert", "Invert Bar"),
@@ -530,23 +530,23 @@ class CustomBarRow(UIComponentsBase):
         self.sw_invert.connect("notify::active", self.on_change)
         invert_box.append(self.sw_invert)
 
-        # Contorno
+        # Outline
         out_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(out_box)
-        out_box.append(Gtk.Label(label=lm.get("config.outline.width", "Ancho del contorno"),
+        out_box.append(Gtk.Label(label=lm.get("config.outline.width", "Outline Width"),
                                  margin_end=5))
         self.out_spin = Gtk.SpinButton.new_with_range(0, 20, 1)
         self.out_spin.set_value(self.settings.get("bar_out_width",
                                                   self.defaults_calc.get("bar_out_width", 1)))
         self.out_spin.connect("value-changed", self.on_change)
         out_box.append(self.out_spin)
-        out_box.append(Gtk.Label(label=lm.get("config.outline.color", "Color del contorno"),
+        out_box.append(Gtk.Label(label=lm.get("config.outline.color", "Outline Color"),
                                  margin_start=15, margin_end=5))
         self.out_color_btn = self.create_color_button(
             "bar_out_color", self.defaults_calc.get("bar_out_color", "#000000"), self.on_change)
         out_box.append(self.out_color_btn)
 
-        # Geometría
+        # Geometry
         wh_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(wh_box)
         self.w_spin = self.create_spin_row(wh_box, lm.get("config.size.width"), "bar_width")
@@ -566,7 +566,7 @@ class CustomBarRow(UIComponentsBase):
         self.update_neu_visibility()
 
     def update_neu_visibility(self):
-        """El color neutral solo aplica a la barra de balance (dual + estilo '1 Bar')."""
+        """The neutral color only applies to the balance bar (dual + '1 Bar' style)."""
         is_single_mode = not self.settings.get("dual_mode", False)
         style = int(self.style_combo.get_active_id() or 0)
         visible = not is_single_mode and style == 1
@@ -597,7 +597,7 @@ class CustomBarRow(UIComponentsBase):
 
 
 class DeviceConfigGroup(Adw.PreferencesGroup):
-    """Selector de dispositivo: tipo, dispositivo concreto, auto-index y límite."""
+    """Device selector: type, specific device, auto-index and limit."""
 
     def __init__(self, parent_action, suffix=""):
         super().__init__()
@@ -607,7 +607,7 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
         lm = self.parent_action.plugin_base.lm
         settings = self.parent_action.get_settings()
 
-        # Tipo
+        # Type
         type_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10, margin_top=5)
         type_box.append(Gtk.Label(label=lm.get("config.type.title", "Device Type"),
                                   xalign=0, margin_end=10, hexpand=True))
@@ -620,7 +620,7 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
         type_box.append(self.type_combo)
         self.add(type_box)
 
-        # Dispositivo
+        # Device
         device_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10, margin_top=5)
         device_box.append(Gtk.Label(label=lm.get("config.device.title", "Device"),
                                     xalign=0, margin_end=10, hexpand=True))
@@ -642,7 +642,7 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
         self.auto_index_box.append(self.auto_index_spin)
         self.add(self.auto_index_box)
 
-        # Límite de volumen
+        # Volume limit
         limit_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10, margin_top=5)
         limit_box.append(Gtk.Label(label=lm.get("config.limit.title", "Volume Limit (%)"),
                                    xalign=0, margin_end=10, hexpand=True))
@@ -736,7 +736,7 @@ class DeviceConfigGroup(Adw.PreferencesGroup):
 
 
 class VolumeMonitorConfigRow(UIComponentsBase):
-    """Configuración del monitor de picos: activación, modos, colores y timing."""
+    """Peak monitor configuration: activation, modes, colors and timing."""
 
     def __init__(self, settings, parent):
         super().__init__(settings, parent)
@@ -746,7 +746,7 @@ class VolumeMonitorConfigRow(UIComponentsBase):
                                 margin_top=5, margin_bottom=5, margin_start=10, margin_end=10)
         self.set_child(self.main_box)
 
-        # Activación
+        # Activation
         box_enable = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_bottom=10)
         box_enable.append(Gtk.Label(label=lm.get("config.monitor.enable", "Enable Volume Monitor"),
                                     xalign=0, hexpand=True, css_classes=["bold"]))
@@ -766,7 +766,7 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         self.settings_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
         self.main_box.append(self.settings_container)
 
-        # Modo de barra
+        # Bar mode
         box_bar_mode = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
         box_bar_mode.append(Gtk.Label(label=lm.get("config.monitor.bar_mode", "Bar Mode"),
                                       xalign=0, margin_end=10))
@@ -778,7 +778,7 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         box_bar_mode.append(self.cb_bar_mode)
         self.settings_container.append(box_bar_mode)
 
-        # Modo de color
+        # Color mode
         box_color_mode = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
         box_color_mode.append(Gtk.Label(label=lm.get("config.monitor.color_mode", "Color Mode"),
                                         xalign=0, margin_end=10))
@@ -786,8 +786,8 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         self.cb_color_mode.append("0", lm.get("config.monitor.color_solid", "Solid"))
         self.cb_color_mode.append("1", lm.get("config.monitor.color_tricolor", "Tricolor"))
         self.cb_color_mode.append("2", lm.get("config.monitor.color_gradient", "Gradient"))
-        self.cb_color_mode.append("3", lm.get("config.monitor.solid_auto", "Sólido Automático (Icono)"))
-        self.cb_color_mode.append("4", lm.get("config.monitor.gradient_auto", "Degradado Automático (Icono)"))
+        self.cb_color_mode.append("3", lm.get("config.monitor.solid_auto", "Automatic Solid (Icon)"))
+        self.cb_color_mode.append("4", lm.get("config.monitor.gradient_auto", "Automatic Gradient (Icon)"))
         self.cb_color_mode.set_active_id(str(self.settings.get("monitor_color_mode", 0)))
         self.cb_color_mode.connect("changed", self.on_color_mode_change)
         box_color_mode.append(self.cb_color_mode)
@@ -800,15 +800,15 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         for box in (self.box_solid, self.box_tricolor, self.box_gradient, self.box_auto):
             self.settings_container.append(box)
 
-        # Auto (oscurecido)
-        self.box_auto.append(Gtk.Label(label=lm.get("config.monitor.darken_auto", "Oscurecer Auto %:"),
+        # Auto (darkened)
+        self.box_auto.append(Gtk.Label(label=lm.get("config.monitor.darken_auto", "Auto Darken %:"),
                                        margin_end=10, xalign=0, hexpand=True))
         self.spin_monitor_darken = Gtk.SpinButton.new_with_range(0, 100, 5)
         self.spin_monitor_darken.set_value(self.settings.get("monitor_auto_darken", 0))
         self.spin_monitor_darken.connect("value-changed", self.on_change)
         self.box_auto.append(self.spin_monitor_darken)
 
-        # Sólido
+        # Solid
         self.box_solid.append(Gtk.Label(label=lm.get("config.monitor.color", "Color"),
                                         xalign=0, hexpand=True))
         self.btn_solid = self.create_color_button("monitor_color_solid", "#ffffff", self.on_change)
@@ -827,7 +827,7 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         self._add_tri_row(lm.get("config.monitor.color_high", "High"), self.btn_tri_high,
                           self.spin_threshold_high)
 
-        # Degradado
+        # Gradient
         self.grad_config = GradientConfigBox("monitor", self.settings, DEFAULT_GRADIENT_COLORS,
                                              self.on_change, lm)
         self.box_gradient.append(self.grad_config)
@@ -860,7 +860,7 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         bdel.append(self.spin_delay)
         self.settings_container.append(bdel)
 
-        # Mostrar dB
+        # Show dB
         bdb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
         bdb.append(Gtk.Label(label=lm.get("config.monitor.show_db", "Show Decibels"),
                              xalign=0, hexpand=True))
@@ -870,7 +870,7 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         bdb.append(self.sw_db)
         self.settings_container.append(bdb)
 
-        # Indicador RMS
+        # RMS Indicator
         brms_sw = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
         brms_sw.append(Gtk.Label(label=lm.get("config.monitor.show_rms", "Show Average Indicator"),
                                  xalign=0, hexpand=True))
@@ -901,7 +901,7 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         self.brms_options2.append(self.btn_rms_out_color)
         self.settings_container.append(self.brms_options2)
 
-        # Invertir barra
+        # Invert barra
         binv = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=5)
         binv.append(Gtk.Label(label=lm.get("config.monitor.invert", "Invert Bar"),
                               xalign=0, hexpand=True))
@@ -978,7 +978,7 @@ class VolumeMonitorConfigRow(UIComponentsBase):
 
 
 class CarouselConfigRow(UIComponentsBase):
-    """Configuración del carrusel: activación, filtros de dispositivos y textos."""
+    """Carousel configuration: activation, device filters and texts."""
 
     def __init__(self, settings_dict, parent_action):
         super().__init__(settings_dict, parent_action)

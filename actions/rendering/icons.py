@@ -1,4 +1,4 @@
-"""Carga, caché y tratamiento de iconos (PIL + tema GTK)."""
+"""Icon loading, caching, and post-processing (PIL + GTK theme lookup)."""
 import io
 import logging
 
@@ -12,27 +12,38 @@ log = logging.getLogger(__name__)
 
 
 class IconCache:
-    """Caché FIFO acotada de iconos ya renderizados (imagen + paleta)."""
+    """Bounded FIFO cache for rendered icon images.
+
+    Entries are (PIL image, colour palette) pairs keyed by a string composed
+    of the icon path, target height, outline width, and outline colour.
+    The oldest entry is evicted when the cache is full.
+    """
 
     def __init__(self, max_size=50):
         self._data = {}
         self._max = max_size
 
     def get(self, key):
+        """Return the cached value for `key`, or None if not present."""
         return self._data.get(key)
 
     def put(self, key, value):
+        """Insert `key` → `value`, evicting the oldest entry when at capacity."""
         if key not in self._data and len(self._data) >= self._max:
+            # Remove the first key in insertion order (FIFO).
             self._data.pop(next(iter(self._data)))
         self._data[key] = value
 
 
 def load_icon_as_pil(icon_path, target_h):
-    """Carga un icono (SVG/PNG/...) escalado a `target_h` como PIL RGBA.
+    """Load an icon file and return it as a PIL RGBA image scaled to `target_h`.
 
-    Usa GdkPixbuf (soporta SVG) y cae a PIL puro si falla.
+    GdkPixbuf is tried first because it supports SVG and preserves aspect ratio.
+    Falls back to PIL for any format GdkPixbuf cannot handle.
+    Returns a transparent square image on complete failure.
     """
     try:
+        # Query the image dimensions to compute a proportional target width.
         pixbuf_info = GdkPixbuf.Pixbuf.get_file_info(icon_path)
         if pixbuf_info:
             w, h = pixbuf_info[1], pixbuf_info[2]
@@ -47,6 +58,7 @@ def load_icon_as_pil(icon_path, target_h):
     except Exception as e:
         log.debug("Error loading icon with GdkPixbuf: %s", e)
 
+    # PIL fallback: works for raster formats not supported by GdkPixbuf.
     try:
         pil_img = Image.open(icon_path).convert("RGBA")
         i_w = int(pil_img.width * (target_h / float(pil_img.height))) if pil_img.height > 0 else target_h
@@ -57,13 +69,19 @@ def load_icon_as_pil(icon_path, target_h):
 
 
 def extract_palette(pil_img, num_colors=3):
-    """Colores dominantes del icono como lista de hex (longitud `num_colors`)."""
+    """Extract the `num_colors` most dominant colours from `pil_img`.
+
+    For images with transparency, pixels with alpha < 128 are ignored.
+    Returns a list of '#rrggbb' hex strings; the list is always exactly
+    `num_colors` long (padded with the last colour if needed).
+    """
     try:
         if pil_img.mode in ("RGBA", "LA") or (pil_img.mode == "P" and "transparency" in pil_img.info):
             img = pil_img.convert("RGBA")
-            img.thumbnail((32, 32))
+            img.thumbnail((32, 32))  # Downsample before counting for speed.
             colors = img.getcolors(4096)
             if colors:
+                # Keep only sufficiently opaque pixels.
                 valid_colors = [(count, rgba) for count, rgba in colors if rgba[3] > 128]
                 if valid_colors:
                     valid_colors.sort(key=lambda x: x[0], reverse=True)
@@ -74,10 +92,12 @@ def extract_palette(pil_img, num_colors=3):
                             palette.append(hex_c)
                         if len(palette) >= num_colors:
                             break
+                    # Pad with the last found colour if fewer than requested.
                     while len(palette) < num_colors:
                         palette.append(palette[-1] if palette else "#ffffff")
                     return palette
 
+        # For fully opaque images, use quantisation.
         img = pil_img.convert("RGB")
         img.thumbnail((32, 32))
         q = img.quantize(colors=num_colors)
@@ -96,7 +116,11 @@ def extract_palette(pil_img, num_colors=3):
 
 
 def lookup_theme_icon(icon_name, size=48):
-    """Busca un icono por nombre en el tema GTK; devuelve su ruta o None."""
+    """Look up an icon by name in the current GTK icon theme.
+
+    Returns the filesystem path to the icon file, or None if not found.
+    Used to resolve application icons from their 'application.icon_name' property.
+    """
     if not icon_name:
         return None
     try:
@@ -113,17 +137,23 @@ def lookup_theme_icon(icon_name, size=48):
 
 
 def apply_outline(pil_img, width, rgba_color):
-    """Devuelve el icono con un contorno sólido alrededor de sus zonas opacas."""
+    """Return `pil_img` with a solid-colour outline around its opaque regions.
+
+    Expands the alpha channel with a max-filter (morphological dilation) to
+    create the outline shape, then composites the original on top.
+    """
     r, g, b, _ = [int(c * 255) for c in rgba_color]
     alpha = pil_img.split()[3]
+    # Dilate the alpha mask by `width` pixels to form the outline silhouette.
     expanded_alpha = alpha.filter(ImageFilter.MaxFilter(width * 2 + 1))
     outline_img = Image.new("RGBA", pil_img.size, (r, g, b, 255))
     outline_img.putalpha(expanded_alpha)
+    # Paste the original icon on top to restore interior pixels.
     outline_img.paste(pil_img, (0, 0), pil_img)
     return outline_img
 
 
 def draw_mute_cross(base_img, x, y, w, h):
-    """Tacha en rojo la zona del icono para indicar silencio."""
+    """Draw a red diagonal line across the icon region to indicate mute state."""
     d = ImageDraw.Draw(base_img)
     d.line([(x, y), (x + w, y + h)], fill=(255, 0, 0, 255), width=max(3, h // 10))

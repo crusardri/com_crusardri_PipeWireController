@@ -1,3 +1,9 @@
+"""Plugin entry point: registers action holders and the PulseAudio service.
+
+StreamController loads this module and calls PipeWireController.__init__
+once per plugin lifecycle.  All actions share the single PulseService
+instance created here.
+"""
 from src.backend.PluginManager.PluginBase import PluginBase
 from src.backend.PluginManager.ActionHolder import ActionHolder
 from src.backend.DeckManagement.InputIdentifier import Input
@@ -10,11 +16,17 @@ from .actions.PipeWireAudioMixer import PipeWireAudioMixer
 class PipeWireController(PluginBase):
     def __init__(self):
         super().__init__()
+
+        # Locale manager shortcut; set to the OS language at startup.
         self.lm = self.locale_manager
         self.lm.set_to_os_default()
 
+        # Single shared connection to PipeWire/PulseAudio (MODEL layer).
+        # All actions reach this via self.plugin_base.pulse_service.
         self.pulse_service = PulseService()
 
+        # Register the Audio Mixer action so StreamController can assign
+        # it to dial inputs.  Touchscreen and key inputs are unsupported.
         self.mixer_action_holder = ActionHolder(
             plugin_base=self,
             action_base=PipeWireAudioMixer,
@@ -28,6 +40,7 @@ class PipeWireController(PluginBase):
         )
         self.add_action_holder(self.mixer_action_holder)
 
+        # Announce the plugin to StreamController (name, repo, versions).
         self.register(
             plugin_name=self.lm.get("plugin.name"),
             github_repo="https://github.com/crusard/PipeWireController",

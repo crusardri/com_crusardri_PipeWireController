@@ -90,5 +90,16 @@
     "config.monitor.app_warning": "El monitor no funciona con aplicaciones individuales. Se monitorizará el dispositivo de salida completo.",
     "config.monitor.solid_auto": "Sólido Automático (Icono)",
     "config.monitor.gradient_auto": "Degradado Automático (Icono)",
-    "config.monitor.darken_auto": "Oscurecer Auto %:"
+    "config.monitor.darken_auto": "Oscurecer Auto %:",
+    "config.carousel.title": "Carrusel",
+    "config.carousel.enable": "Habilitar Carrusel de Dispositivos",
+    "config.carousel.show_sinks": "Mostrar Sinks",
+    "config.carousel.show_sources": "Mostrar Sources",
+    "config.carousel.show_apps": "Mostrar Aplicaciones",
+    "config.carousel.default_sink": "Dispositivo de Salida por Defecto",
+    "config.carousel.default_source": "Dispositivo de Entrada por Defecto",
+    "config.carousel.name_format": "Formato del Nombre",
+    "config.carousel.pct_format": "Formato del Volumen",
+    "config.carousel.no_devices": "Sin dispositivos",
+    "actions.pipewire-mixer.event.touch": "Acción Táctil"
 }

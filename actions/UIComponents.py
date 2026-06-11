@@ -174,7 +174,7 @@ class ColorModeSelector(Gtk.Box):
         self.grad_box.save_settings()
 
 class CustomLabelRow(UIComponentsBase):
-    def __init__(self, title_text, settings_dict, key_prefix, parent_action):
+    def __init__(self, title_text, settings_dict, key_prefix, parent_action, show_text_input=True):
         super().__init__(settings_dict, parent_action)
         self.key_prefix = key_prefix
 
@@ -212,32 +212,34 @@ class CustomLabelRow(UIComponentsBase):
         label = Gtk.Label(label=title_text, xalign=0, margin_bottom=3, css_classes=["bold"])
         self.main_box.append(label)
 
-        self.text_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
-        self.main_box.append(self.text_box)
-
-        if key_prefix != "pct":
-            self.entry = Gtk.Entry(hexpand=True, placeholder_text=self.parent.plugin_base.lm.get("config.label.placeholder"))
-            if f"text_{key_prefix}" in self.settings:
-                self.entry.set_text(self.settings[f"text_{key_prefix}"])
-            self.entry.connect("changed", self.on_change)
-            self.text_box.append(self.entry)
+        if show_text_input:
+            self.text_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
+            self.main_box.append(self.text_box)
+            if key_prefix != "pct":
+                self.entry = Gtk.Entry(hexpand=True, placeholder_text=self.parent.plugin_base.lm.get("config.label.placeholder"))
+                if f"text_{key_prefix}" in self.settings:
+                    self.entry.set_text(self.settings[f"text_{key_prefix}"])
+                self.entry.connect("changed", self.on_change)
+                self.text_box.append(self.entry)
+            else:
+                self.entry = None
+                self.pct_format_combo = Gtk.ComboBoxText(hexpand=True)
+                self.pct_format_combo.append("0", "Porcentaje (0%, 50%, 100%)")
+                self.pct_format_combo.append("1", "Panorámico Porcentaje (-100%, 0%, +100%)")
+                self.pct_format_combo.append("2", "Panorámico (-100, 0, +100)")
+                self.pct_format_combo.append("3", "Crossfade (A 0, A=B, B 0)")
+                self.pct_format_combo.append("4", "Crossfade B (L0, 100, R0)")
+                self.pct_format_combo.append("5", "Deshabilitado")
+                
+                val = str(self.settings.get("pct_format", 0))
+                self.pct_format_combo.set_active_id(val)
+                self.pct_format_combo.connect("changed", self.on_change)
+                self.text_box.append(self.pct_format_combo)
         else:
             self.entry = None
-            self.pct_format_combo = Gtk.ComboBoxText(hexpand=True)
-            self.pct_format_combo.append("0", "Porcentaje (0%, 50%, 100%)")
-            self.pct_format_combo.append("1", "Panorámico Porcentaje (-100%, 0%, +100%)")
-            self.pct_format_combo.append("2", "Panorámico (-100, 0, +100)")
-            self.pct_format_combo.append("3", "Crossfade (A 0, A=B, B 0)")
-            self.pct_format_combo.append("4", "Crossfade B (L0, 100, R0)")
-            self.pct_format_combo.append("5", "Deshabilitado")
-            
-            val = str(self.settings.get("pct_format", 0))
-            self.pct_format_combo.set_active_id(val)
-            self.pct_format_combo.connect("changed", self.on_change)
-            self.text_box.append(self.pct_format_combo)
+            self.pct_format_combo = None
 
         self.color_btn = self.create_color_button(f"color_{key_prefix}", f"#{int(def_color_rgba.red*255):02x}{int(def_color_rgba.green*255):02x}{int(def_color_rgba.blue*255):02x}", self.on_change)
-        self.text_box.append(self.color_btn)
 
         self.font_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.font_box)
@@ -251,7 +253,10 @@ class CustomLabelRow(UIComponentsBase):
         else:
             self.font_btn.set_font_desc(Pango.FontDescription.from_string(def_font_desc_str))
         self.font_btn.connect("font-set", self.on_change)
+        
         self.font_box.append(self.font_btn)
+        self.color_btn.set_margin_start(10)
+        self.font_box.append(self.color_btn)
 
         self.align_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True, margin_top=6)
         self.main_box.append(self.align_box)
@@ -1123,3 +1128,71 @@ class VolumeMonitorConfigRow(UIComponentsBase):
 
         self.parent.set_settings(self.settings)
         self.parent.draw_image()
+
+class CarouselConfigRow(UIComponentsBase):
+    def __init__(self, settings_dict, parent_action):
+        super().__init__(settings_dict, parent_action)
+        lm = self.parent.plugin_base.lm
+        
+        self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True,
+                                margin_start=15, margin_end=15, margin_top=15, margin_bottom=15, spacing=10)
+        self.set_child(self.main_box)
+        
+        # Enable Switch
+        box_enable = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        lbl_enable = Gtk.Label(label=lm.get("config.carousel.enable", "Enable Device Carousel"), xalign=0, hexpand=True)
+        self.sw_enable = Gtk.Switch()
+        self.sw_enable.set_active(self.settings.get("carousel_enabled", False))
+        self.sw_enable.connect("notify::active", self.on_change)
+        box_enable.append(lbl_enable)
+        box_enable.append(self.sw_enable)
+        self.main_box.append(box_enable)
+        
+        self.main_box.append(Gtk.Separator(margin_top=5, margin_bottom=5))
+        
+        # Checkboxes for what to show
+        def create_toggle(key, label_str, default=False):
+            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            lbl = Gtk.Label(label=lm.get(label_str, label_str), xalign=0, hexpand=True)
+            sw = Gtk.Switch()
+            sw.set_active(self.settings.get(key, default))
+            sw.connect("notify::active", self.on_change)
+            box.append(lbl)
+            box.append(sw)
+            return box, sw
+            
+        b1, self.sw_sink = create_toggle("carousel_show_sinks", "config.carousel.show_sinks", False)
+        b2, self.sw_source = create_toggle("carousel_show_sources", "config.carousel.show_sources", False)
+        b3, self.sw_app = create_toggle("carousel_show_apps", "config.carousel.show_apps", True)
+        b4, self.sw_def_sink = create_toggle("carousel_show_default_sink", "config.carousel.default_sink", True)
+        b5, self.sw_def_source = create_toggle("carousel_show_default_source", "config.carousel.default_source", False)
+        
+        self.main_box.append(b1)
+        self.main_box.append(b2)
+        self.main_box.append(b3)
+        self.main_box.append(b4)
+        self.main_box.append(b5)
+        
+        self.main_box.append(Gtk.Separator(margin_top=10, margin_bottom=10))
+        
+        # Text Configuration
+        self.name_row = CustomLabelRow(lm.get("config.carousel.name_format", "Name Format"), settings_dict, "carousel_name", parent_action, show_text_input=False)
+        self.name_row.set_activatable(False)
+        self.pct_row = CustomLabelRow(lm.get("config.carousel.pct_format", "Volume Format"), settings_dict, "carousel_pct", parent_action, show_text_input=False)
+        self.pct_row.set_activatable(False)
+        
+        self.main_box.append(self.name_row)
+        
+        self.main_box.append(Gtk.Separator(margin_top=10, margin_bottom=10))
+        
+        self.main_box.append(self.pct_row)
+        
+    def on_change(self, *args):
+        self.settings["carousel_enabled"] = self.sw_enable.get_active()
+        self.settings["carousel_show_sinks"] = self.sw_sink.get_active()
+        self.settings["carousel_show_sources"] = self.sw_source.get_active()
+        self.settings["carousel_show_apps"] = self.sw_app.get_active()
+        self.settings["carousel_show_default_sink"] = self.sw_def_sink.get_active()
+        self.settings["carousel_show_default_source"] = self.sw_def_source.get_active()
+        
+        self.parent.set_settings(self.settings)

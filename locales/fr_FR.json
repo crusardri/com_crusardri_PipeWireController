@@ -92,5 +92,16 @@
     "config.monitor.app_warning": "Le moniteur ne prend pas en charge les applications individuelles. Le périphérique de sortie complet sera surveillé à la place.",
     "config.monitor.solid_auto": "Solide Auto (Icône)",
     "config.monitor.gradient_auto": "Dégradé Auto (Icône)",
-    "config.monitor.darken_auto": "Assombrir Auto %:"
+    "config.monitor.darken_auto": "Assombrir Auto %:",
+    "config.carousel.title": "Carrousel",
+    "config.carousel.enable": "Activer le Carrousel d'Appareils",
+    "config.carousel.show_sinks": "Afficher les Sinks",
+    "config.carousel.show_sources": "Afficher les Sources",
+    "config.carousel.show_apps": "Afficher les Applications",
+    "config.carousel.default_sink": "Périphérique de Sortie par Défaut",
+    "config.carousel.default_source": "Périphérique d'Entrée par Défaut",
+    "config.carousel.name_format": "Format du Nom",
+    "config.carousel.pct_format": "Format du Volume",
+    "config.carousel.no_devices": "Aucun appareil",
+    "actions.pipewire-mixer.event.touch": "Action Tactile"
 }

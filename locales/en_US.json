@@ -90,5 +90,16 @@
     "config.monitor.app_warning": "Monitor does not support individual applications. It will monitor the entire output device instead.",
     "config.monitor.solid_auto": "Solid Auto (Icon)",
     "config.monitor.gradient_auto": "Gradient Auto (Icon)",
-    "config.monitor.darken_auto": "Darken Auto %:"
+    "config.monitor.darken_auto": "Darken Auto %:",
+    "config.carousel.title": "Carousel",
+    "config.carousel.enable": "Enable Device Carousel",
+    "config.carousel.show_sinks": "Show Sinks",
+    "config.carousel.show_sources": "Show Sources",
+    "config.carousel.show_apps": "Show Applications",
+    "config.carousel.default_sink": "Default Output Device",
+    "config.carousel.default_source": "Default Input Device",
+    "config.carousel.name_format": "Name Format",
+    "config.carousel.pct_format": "Volume Format",
+    "config.carousel.no_devices": "No devices",
+    "actions.pipewire-mixer.event.touch": "Touch Action"
 }

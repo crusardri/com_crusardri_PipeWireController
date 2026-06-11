@@ -30,9 +30,22 @@ class PipeWireAudioMixer(PipeWireActionBase):
         self.add_event_assigner(EventAssigner(
             id="ToggleMute",
             ui_label=self.plugin_base.lm.get("actions.pipewire-mixer.event.toggle-mute", "Toggle Mute"),
-            default_events=[Input.Dial.Events.SHORT_UP, Input.Dial.Events.SHORT_TOUCH_PRESS],
+            default_events=[Input.Dial.Events.SHORT_UP],
             callback=self.on_toggle_mute
         ))
+
+        self.add_event_assigner(EventAssigner(
+            id="TouchAction",
+            ui_label=self.plugin_base.lm.get("actions.pipewire-mixer.event.touch", "Touch Action"),
+            default_events=[Input.Dial.Events.SHORT_TOUCH_PRESS],
+            callback=self.on_touch_action
+        ))
+
+        self.carousel_active = False
+        self.carousel_target = "a"
+        self.carousel_index = 0
+        self.carousel_devices = []
+        self.carousel_last_interaction = 0
 
         self.add_event_assigner(EventAssigner(
             id="MixerRight",
@@ -123,6 +136,14 @@ class PipeWireAudioMixer(PipeWireActionBase):
             return
         self.last_tick_time = current_time
 
+        if getattr(self, "carousel_active", False):
+            if current_time - getattr(self, "carousel_last_interaction", 0) > 10.0:
+                self.carousel_active = False
+                self._force_redraw = True
+            else:
+                self.draw_image()
+                return
+
         try:
             dev_a, dev_b, is_single_mode = self.get_active_devices_and_mode()
             self._last_single_mode = is_single_mode
@@ -152,9 +173,10 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 if self.peak_monitor._running:
                     self.peak_monitor.stop()
 
-            force_draw = should_monitor and self.peak_monitor._running
+            force_draw = (should_monitor and self.peak_monitor._running) or getattr(self, "_force_redraw", False)
 
             if changed or force_draw or self._monitor_display_active != should_monitor:
+                self._force_redraw = False
                 self._monitor_display_active = should_monitor and self.peak_monitor._running
                 
                 self.last_state.update({
@@ -326,9 +348,120 @@ class PipeWireAudioMixer(PipeWireActionBase):
             logging.getLogger(__name__).debug("Error resizing PIL image: %s", e)
             return Image.new("RGBA", (target_h, target_h), (0, 0, 0, 0))
 
+    def _build_carousel_device_list(self):
+        settings = self.get_settings()
+        devices = []
+        with self.plugin_base.pulse_lock:
+            pulse = self.get_pulse()
+            if settings.get("carousel_show_default_sink", True):
+                def_sink = pulse.server_info().default_sink_name
+                dev = next((d for d in pulse.sink_list() if d.name == def_sink), None)
+                if dev: devices.append({"type": "sink", "id": dev.index, "name": "Default Sink", "target_name": "default", "dev": dev})
+            
+            if settings.get("carousel_show_default_source", False):
+                def_source = pulse.server_info().default_source_name
+                dev = next((d for d in pulse.source_list() if d.name == def_source), None)
+                if dev: devices.append({"type": "source", "id": dev.index, "name": "Default Source", "target_name": "default", "dev": dev})
+                
+            if settings.get("carousel_show_sinks", False):
+                for dev in pulse.sink_list():
+                    devices.append({"type": "sink", "id": dev.index, "name": dev.description, "target_name": dev.name, "dev": dev})
+                    
+            if settings.get("carousel_show_sources", False):
+                for dev in pulse.source_list():
+                    devices.append({"type": "source", "id": dev.index, "name": dev.description, "target_name": dev.name, "dev": dev})
+                    
+            if settings.get("carousel_show_apps", True):
+                for dev in pulse.sink_input_list():
+                    t_name = dev.proplist.get('application.process.binary') or dev.proplist.get('application.name')
+                    if t_name:
+                        devices.append({"type": "app", "id": dev.index, "name": t_name, "target_name": t_name, "dev": dev})
+        
+        seen = set()
+        unique_devices = []
+        for d in devices:
+            if d['type'] == 'app':
+                key = f"app_{d['target_name']}"
+            else:
+                key = f"{d['type']}_{d['id']}"
+                
+            if key not in seen:
+                seen.add(key)
+                unique_devices.append(d)
+                
+        return unique_devices
+
+    def switch_carousel_target(self, new_target):
+        self.carousel_target = new_target
+        settings = self.get_settings()
+        cur_target_str = settings.get(f"device_target_{new_target}", "auto")
+        found = False
+        for i, d in enumerate(self.carousel_devices):
+            target_id = f"{d['type']}_{d['id']}"
+            if cur_target_str == target_id:
+                self.carousel_index = i
+                found = True
+                break
+        if not found:
+            self.carousel_index = 0
+
+    def on_touch_action(self, data=None):
+        import time
+        self._last_interaction_time = time.time()
+        
+        settings = self.get_settings()
+        if not settings.get("carousel_enabled", False):
+            return
+
+        is_single_mode = not settings.get("dual_mode", False)
+        
+        if getattr(self, "carousel_active", False):
+            self.carousel_last_interaction = time.time()
+            if not is_single_mode and getattr(self, "carousel_target", "a") == "b":
+                # Target B -> Cancel
+                self.carousel_active = False
+                self._force_redraw = True
+            elif not is_single_mode and getattr(self, "carousel_target", "a") == "a":
+                # Target A -> Switch to Target B
+                self.switch_carousel_target("b")
+            else:
+                # Single mode -> Do nothing
+                pass
+        else:
+            self.carousel_devices = self._build_carousel_device_list()
+            if not self.carousel_devices:
+                return
+            
+            self.carousel_active = True
+            self.carousel_last_interaction = time.time()
+            self.switch_carousel_target("a")
+                
+        self.last_tick_time = 0
+        self.on_tick()
+
     def on_toggle_mute(self, data=None):
         import time
         self._last_interaction_time = time.time()
+        
+        if getattr(self, "carousel_active", False):
+            self.carousel_active = False
+            if getattr(self, "carousel_devices", []) and self.carousel_index < len(self.carousel_devices):
+                selected = self.carousel_devices[self.carousel_index]
+                dev_type_carousel = selected['type']
+                dev_type = "application" if dev_type_carousel == "app" else dev_type_carousel
+                target_name = selected.get('target_name', '')
+                
+                if getattr(self, "carousel_target", "a") == "a":
+                    self.save_setting("device_type_a", dev_type)
+                    self.save_setting("device_name_a", target_name)
+                else:
+                    self.save_setting("device_type_b", dev_type)
+                    self.save_setting("device_name_b", target_name)
+            self._force_redraw = True
+            self.last_tick_time = 0
+            self.on_tick()
+            return
+            
         dev_a, dev_b, is_single_mode = self.get_active_devices_and_mode()
             
         with self.plugin_base.pulse_lock:
@@ -395,14 +528,40 @@ class PipeWireAudioMixer(PipeWireActionBase):
         self.on_tick()
 
     def on_volume_up(self, data=None):
+        if getattr(self, "carousel_active", False):
+            import time
+            self._last_interaction_time = time.time()
+            self.carousel_last_interaction = time.time()
+            devs = getattr(self, "carousel_devices", [])
+            if devs:
+                self.carousel_index = (getattr(self, "carousel_index", 0) + 1) % len(devs)
+                self.last_tick_time = 0
+                self.on_tick()
+            return
+            
         step = float(self.get_settings().get("volume_step", 5))
         self.change_balance(step)
 
     def on_volume_down(self, data=None):
+        if getattr(self, "carousel_active", False):
+            import time
+            self._last_interaction_time = time.time()
+            self.carousel_last_interaction = time.time()
+            devs = getattr(self, "carousel_devices", [])
+            if devs:
+                self.carousel_index = (getattr(self, "carousel_index", 0) - 1) % len(devs)
+                self.last_tick_time = 0
+                self.on_tick()
+            return
+            
         step = float(self.get_settings().get("volume_step", 5))
         self.change_balance(-step)
 
     def draw_image(self):
+        if getattr(self, "carousel_active", False):
+            self._draw_carousel()
+            return
+            
         settings = self.get_settings()
         dev_a, dev_b, is_single_mode = self.get_active_devices_and_mode()
         
@@ -464,7 +623,7 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 dtype = settings.get(f"device_type_{suffix}", "sink")
                 if dtype == "application":
                     auto_prefix = self.plugin_base.lm.get("config.device.auto", "Auto") + " "
-                    dev_name = settings.get(f"device_name_{suffix}", auto_prefix + "1")
+                    dev_name = settings.get(f"device_name_{suffix}") or (auto_prefix + "1")
                     is_auto = dev_name.startswith(auto_prefix)
                     
                     target_app_icon = None
@@ -1000,6 +1159,14 @@ class PipeWireAudioMixer(PipeWireActionBase):
         # Override specific needs
         bar_h = 8
         defs["bar_height"] = bar_h
+        defs["pos_y_carousel_name"] = defs.get("pos_y_name", int(round(height * 0.05)))
+        defs["pos_y_carousel_pct"] = height - int(round(height * 0.05))
+        
+        margin = defs.get("bar_x", int(width * 0.05))
+        defs["pos_x_carousel_name"] = margin
+        defs["pos_x_carousel_pct"] = margin
+        defs["width_carousel_name"] = width - (margin * 2)
+        defs["width_carousel_pct"] = width - (margin * 2)
         defs["bar_y"] = height - bar_h - int(round(height * 0.03))
         defs["bar_radius"] = 5
         defs["bar_out_width"] = 1
@@ -1078,6 +1245,11 @@ class PipeWireAudioMixer(PipeWireActionBase):
             self.exp_monitor = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.monitor.title", "Volume Monitor"))
             self.exp_monitor.add_row(VolumeMonitorConfigRow(settings, self))
             grp_misc.add(self.exp_monitor)
+            
+            from .UIComponents import CarouselConfigRow
+            self.exp_carousel = Adw.ExpanderRow(title=self.plugin_base.lm.get("config.carousel.title", "Carousel"))
+            self.exp_carousel.add_row(CarouselConfigRow(settings, self))
+            grp_misc.add(self.exp_carousel)
 
             self.exp_dev_b.set_visible(settings.get("dual_mode", False))
             self.exp_icon_b.set_visible(settings.get("dual_mode", False))
@@ -1102,3 +1274,194 @@ class PipeWireAudioMixer(PipeWireActionBase):
         self.exp_icon_b.set_visible(switch.get_active())
         
         self.draw_image()
+
+    def _draw_carousel(self):
+        try:
+            import cairo, os
+            from PIL import Image
+            from gi.repository import Pango, PangoCairo, Gtk, Gdk
+            
+            settings = self.get_settings()
+            defs, width, height = self.get_calculated_defaults()
+            
+            surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
+            ctx = cairo.Context(surface)
+            
+            if not getattr(self, "carousel_devices", []):
+                layout = PangoCairo.create_layout(ctx)
+                layout.set_text(self.plugin_base.lm.get("config.carousel.no_devices", "No devices"), -1)
+                ctx.set_source_rgba(1, 1, 1, 1)
+                w_pango, h_pango = layout.get_pixel_size()
+                ctx.move_to((width - w_pango) // 2, (height - h_pango) // 2)
+                PangoCairo.show_layout(ctx, layout)
+                cairo_img = Image.frombuffer("RGBA", (width, height), surface.get_data().tobytes(), "raw", "BGRA", 0, 1)
+                self.set_media(image=cairo_img)
+                return
+
+            num_devs = len(self.carousel_devices)
+            center_idx = getattr(self, "carousel_index", 0)
+            left_idx = (center_idx - 1) % num_devs
+            right_idx = (center_idx + 1) % num_devs
+            
+            icon_size_center = 48
+            icon_size_side = 28
+            
+            center_y = (height - icon_size_center) // 2
+            side_y = (height - icon_size_side) // 2
+            
+            center_x = (width - icon_size_center) // 2
+            left_x = int(width * 0.1)
+            right_x = int(width * 0.9) - icon_size_side
+            
+            def get_icon_path(dev_dict):
+                icon_path = ""
+                if dev_dict['type'] == 'app':
+                    target_app_icon = dev_dict['dev'].proplist.get('application.icon_name') or dev_dict['dev'].proplist.get('application.process.binary')
+                    if target_app_icon:
+                        try:
+                            theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+                            icon_info = theme.lookup_icon(target_app_icon, None, 48, 1, Gtk.TextDirection.NONE, Gtk.IconLookupFlags.NONE)
+                            if icon_info: 
+                                found_path = icon_info.get_file().get_path()
+                                if found_path: icon_path = found_path
+                        except: pass
+                
+                if not icon_path:
+                    if dev_dict['type'] == 'source':
+                        icon_path = os.path.join(self.plugin_base.PATH, "assets", "mic.svg")
+                    else:
+                        icon_path = os.path.join(self.plugin_base.PATH, "assets", "speaker.svg")
+                return icon_path
+
+            def draw_device_icon(idx, x, y, size, opacity):
+                d = self.carousel_devices[idx]
+                path = get_icon_path(d)
+                try:
+                    pil_img = self.load_icon_as_pil(path, size)
+                    if opacity < 255:
+                        pil_img.putalpha(pil_img.getchannel("A").point(lambda p: int(p * (opacity / 255.0))))
+                    base_img.alpha_composite(pil_img, (x, y))
+                except Exception:
+                    pass
+
+            base_img = Image.new("RGBA", (width, height), (0,0,0,0))
+            if num_devs >= 3:
+                draw_device_icon(left_idx, left_x, side_y, icon_size_side, 230)
+                draw_device_icon(right_idx, right_x, side_y, icon_size_side, 230)
+            elif num_devs == 2:
+                draw_device_icon(right_idx, right_x, side_y, icon_size_side, 230)
+                
+            draw_device_icon(center_idx, center_x, center_y, icon_size_center, 255)
+
+            # TEXT RENDERING WITH PANGOCAIRO
+            defaults = gl.settings_manager.font_defaults
+
+            def get_def_color(key, fallback="#FFFFFF"):
+                val = defaults.get(key)
+                if val: return f"#{val[0]:02x}{val[1]:02x}{val[2]:02x}"
+                return fallback
+
+            def_color = get_def_color("font-color", "#FFFFFF")
+            def_out_color = get_def_color("outline-color", "#000000")
+            def_out_width = int(defaults.get("outline-width", 2))
+            def_align = defaults.get("alignment", "center")
+            def_font_family = defaults.get("font-family", "Sans")
+            def_font_size = int(defaults.get("font-size", 15))
+            def_font_desc = f"{def_font_family} {def_font_size}"
+
+            def draw_text_section(key_suffix, text, default_y, is_pct=False):
+                align = settings.get(f"align_{key_suffix}", def_align)
+                out_width = int(settings.get(f"outline_width_{key_suffix}", def_out_width))
+                c_out = self._parse_color(settings.get(f"outline_color_{key_suffix}", def_out_color))
+                c_text = self._parse_color(settings.get(f"color_{key_suffix}", def_color))
+
+                curr_font = settings.get(f"font_desc_{key_suffix}", def_font_desc)
+                desc = Pango.FontDescription.from_string(curr_font) if curr_font else Pango.FontDescription()
+
+                layout = PangoCairo.create_layout(ctx)
+                layout.set_font_description(desc)
+                layout.set_text(text, -1)
+
+                margin = defs.get("bar_x", int(width * 0.05))
+                if f"width_{key_suffix}" in settings: max_w = settings[f"width_{key_suffix}"]
+                else: max_w = width - (margin * 2)
+
+                layout.set_width(max_w * Pango.SCALE)
+                layout.set_ellipsize(Pango.EllipsizeMode.END)
+
+                w_pango, h_pango = layout.get_pixel_size()
+
+                if f"pos_x_{key_suffix}" in settings: base_x = settings[f"pos_x_{key_suffix}"]
+                else: base_x = margin
+
+                if f"pos_y_{key_suffix}" in settings: y_val = settings[f"pos_y_{key_suffix}"]
+                else: y_val = default_y
+
+                if is_pct:
+                    y_pos = y_val - h_pango
+                else:
+                    y_pos = y_val
+
+                if align == "left": x = base_x
+                elif align == "right": x = base_x + max_w - w_pango
+                else: x = base_x + int((max_w - w_pango) / 2)
+
+                if out_width > 0:
+                    ctx.move_to(x, y_pos)
+                    PangoCairo.layout_path(ctx, layout)
+                    ctx.set_source_rgba(*c_out)
+                    ctx.set_line_width(out_width * 2)
+                    ctx.set_line_join(cairo.LINE_JOIN_ROUND)
+                    ctx.stroke()
+                
+                ctx.set_source_rgba(*c_text)
+                ctx.move_to(x, y_pos)
+                PangoCairo.show_layout(ctx, layout)
+
+            current_dev = self.carousel_devices[center_idx]
+            dev_name = current_dev["name"]
+            
+            vol_pct = 0
+            is_muted = False
+            if current_dev["dev"]:
+                with self.plugin_base.pulse_lock:
+                    vol_pct = int(round(self.get_pulse().volume_get_all_chans(current_dev["dev"]) * 100))
+                    is_muted = current_dev["dev"].mute
+            
+            if is_muted:
+                vol_pct = 0
+                
+            name_y = defs.get("pos_y_name", int(round(height * 0.05)))
+            pct_y = height - int(round(height * 0.05))
+
+            draw_text_section("carousel_name", dev_name, name_y, is_pct=False)
+            draw_text_section("carousel_pct", f"{vol_pct}%", pct_y, is_pct=True)
+
+            is_single_mode = not settings.get("dual_mode", False)
+            if not is_single_mode:
+                ind_text = "A" if getattr(self, "carousel_target", "a") == "a" else "B"
+                ind_color = (0, 1, 1, 1) if ind_text == "A" else (1, 0.5, 0, 1)
+                
+                layout = PangoCairo.create_layout(ctx)
+                desc = Pango.FontDescription.from_string("Sans Bold 20")
+                layout.set_font_description(desc)
+                layout.set_text(ind_text, -1)
+                w_pango, h_pango = layout.get_pixel_size()
+                
+                ctx.move_to(5, height - h_pango - 5)
+                ctx.set_source_rgba(*ind_color)
+                PangoCairo.show_layout(ctx, layout)
+                
+            cairo_img = Image.frombuffer("RGBA", (width, height), surface.get_data().tobytes(), "raw", "BGRA", 0, 1)
+            cairo_img.alpha_composite(base_img)
+            self.set_media(image=cairo_img)
+
+        except Exception as e:
+            import traceback
+            import logging
+            logging.error(f"Error drawing carousel: {e}\n{traceback.format_exc()}")
+            from PIL import Image, ImageDraw
+            err_img = Image.new("RGBA", (100, 100), (255,0,0,255))
+            d = ImageDraw.Draw(err_img)
+            d.text((5, 5), "ERROR", fill=(255,255,255))
+            self.set_media(image=err_img)

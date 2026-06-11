@@ -89,5 +89,16 @@
     "config.monitor.app_warning": "Der Monitor unterstützt keine einzelnen Anwendungen. Stattdessen wird das gesamte Ausgabegerät überwacht.",
     "config.monitor.solid_auto": "Vollfarbe Auto (Symbol)",
     "config.monitor.gradient_auto": "Verlauf Auto (Symbol)",
-    "config.monitor.darken_auto": "Abdunkeln Auto %:"
+    "config.monitor.darken_auto": "Abdunkeln Auto %:",
+    "config.carousel.title": "Karussell",
+    "config.carousel.enable": "Gerätekarussell aktivieren",
+    "config.carousel.show_sinks": "Sinks anzeigen",
+    "config.carousel.show_sources": "Sources anzeigen",
+    "config.carousel.show_apps": "Anwendungen anzeigen",
+    "config.carousel.default_sink": "Standard-Ausgabegerät",
+    "config.carousel.default_source": "Standard-Eingabegerät",
+    "config.carousel.name_format": "Namensformat",
+    "config.carousel.pct_format": "Lautstärkeformat",
+    "config.carousel.no_devices": "Keine Geräte",
+    "actions.pipewire-mixer.event.touch": "Touch-Aktion"
 }

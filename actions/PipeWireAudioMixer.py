@@ -32,14 +32,15 @@ from .rendering.bars import BarRenderer, STYLE_TWO_BARS
 from .rendering.colors import parse_color
 from .rendering.text import FontDefaults, draw_text_section, draw_centered_text
 from .UIComponents import (CustomLabelRow, CustomIconRow, CustomBarRow,
-                           DeviceConfigGroup, VolumeMonitorConfigRow, CarouselConfigRow)
+                           DeviceConfigGroup, VolumeMonitorBarRow, VolumeMonitorSettingsRow,
+                           CarouselSettingsRow, CarouselIconsRow)
 
 log = logging.getLogger(__name__)
 
 # Hard ceiling for volume in percent (applies to all set/clamp operations).
 VOLUME_LIMIT_MAX = 150.0
-# Seconds of inactivity before the carousel closes automatically.
-CAROUSEL_TIMEOUT_S = 10.0
+# Default seconds of inactivity before the carousel closes automatically.
+DEFAULT_CAROUSEL_TIMEOUT_S = 10.0
 # Timer interval used when the peak monitor is not running.
 IDLE_TICK_INTERVAL_S = 0.2
 # Minimum timer interval in milliseconds (prevents CPU spinning).
@@ -173,9 +174,10 @@ class PipeWireAudioMixer(PipeWireActionBase):
             return tick_interval
         self.last_tick_time = current_time
 
-        # Handle carousel timeout: auto-close after CAROUSEL_TIMEOUT_S of inactivity.
+        # Handle carousel timeout: auto-close after inactivity.
         if self.carousel_active:
-            if current_time - self.carousel_last_interaction > CAROUSEL_TIMEOUT_S:
+            carousel_timeout = self.get_settings().get("carousel_delay", DEFAULT_CAROUSEL_TIMEOUT_S)
+            if current_time - self.carousel_last_interaction > carousel_timeout:
                 self.carousel_active = False
                 self._force_redraw = True
             else:
@@ -591,6 +593,18 @@ class PipeWireAudioMixer(PipeWireActionBase):
             if key not in seen:
                 seen.add(key)
                 unique_devices.append(d)
+
+        # Pad the list by looping it if there are fewer items than carousel_count
+        if unique_devices:
+            carousel_count = settings.get("carousel_count", 5)
+            if carousel_count not in CAROUSEL_COUNTS:
+                carousel_count = 5
+            
+            if len(unique_devices) < carousel_count:
+                original_list = list(unique_devices)
+                while len(unique_devices) < carousel_count:
+                    unique_devices.extend(original_list)
+
         return unique_devices
 
     def _apply_carousel_selection(self):
@@ -1131,13 +1145,63 @@ class PipeWireAudioMixer(PipeWireActionBase):
             self.exp_icon_b.add_row(CustomIconRow(settings, self, "b"))
             grp_misc.add(self.exp_icon_b)
 
-            self.exp_monitor = Adw.ExpanderRow(title=lm.get("config.monitor.title", "Volume Monitor"))
-            self.exp_monitor.add_row(VolumeMonitorConfigRow(settings, self))
-            grp_misc.add(self.exp_monitor)
+            # Volume Monitor Group
+            grp_monitor = Adw.PreferencesGroup(title=lm.get("config.monitor.title", "Volume Monitor"))
 
-            self.exp_carousel = Adw.ExpanderRow(title=lm.get("config.carousel.title", "Carousel"))
-            self.exp_carousel.add_row(CarouselConfigRow(settings, self))
-            grp_misc.add(self.exp_carousel)
+            self.switch_monitor = Adw.SwitchRow(title=lm.get("config.monitor.enable", "Enable Volume Monitor"))
+            self.switch_monitor.set_active(settings.get("monitor_enabled", False))
+            self.switch_monitor.connect("notify::active", lambda sw, p: self.save_setting("monitor_enabled", sw.get_active()))
+            grp_monitor.add(self.switch_monitor)
+
+            self.exp_mon_settings = Adw.ExpanderRow(title=lm.get("config.monitor.settings.title", "Monitor Settings"))
+            self.exp_mon_settings.add_row(VolumeMonitorSettingsRow(settings, self))
+            grp_monitor.add(self.exp_mon_settings)
+
+            self.exp_mon_bar = Adw.ExpanderRow(title=lm.get("config.bar.format", "Bar Format"))
+            self.exp_mon_bar.add_row(VolumeMonitorBarRow(settings, self))
+            grp_monitor.add(self.exp_mon_bar)
+
+            def _update_monitor_vis(sw, *args):
+                active = sw.get_active()
+                self.exp_mon_bar.set_visible(active)
+                self.exp_mon_settings.set_visible(active)
+            self.switch_monitor.connect("notify::active", _update_monitor_vis)
+            _update_monitor_vis(self.switch_monitor)
+
+            # Carousel Group
+            grp_carousel = Adw.PreferencesGroup(title=lm.get("config.carousel.title", "Carousel"))
+
+            self.switch_carousel = Adw.SwitchRow(title=lm.get("config.carousel.enable", "Enable Device Carousel"))
+            self.switch_carousel.set_active(settings.get("carousel_enabled", False))
+            self.switch_carousel.connect("notify::active", lambda sw, p: self.save_setting("carousel_enabled", sw.get_active()))
+            grp_carousel.add(self.switch_carousel)
+
+            self.exp_car_settings = Adw.ExpanderRow(title=lm.get("config.carousel.settings.title", "Carousel Settings"))
+            self.exp_car_settings.add_row(CarouselSettingsRow(settings, self))
+            grp_carousel.add(self.exp_car_settings)
+
+            self.exp_car_name = Adw.ExpanderRow(title=lm.get("config.carousel.name_format", "Name Format"))
+            self.exp_car_name.add_row(CustomLabelRow(lm.get("config.format.name.top", "Top Name"),
+                                                     settings, "carousel_name", self, show_text_input=False))
+            grp_carousel.add(self.exp_car_name)
+
+            self.exp_car_icons = Adw.ExpanderRow(title=lm.get("config.carousel.icons.title", "Icons"))
+            self.exp_car_icons.add_row(CarouselIconsRow(settings, self))
+            grp_carousel.add(self.exp_car_icons)
+
+            self.exp_car_pct = Adw.ExpanderRow(title=lm.get("config.carousel.pct_format", "Volume Format"))
+            self.exp_car_pct.add_row(CustomLabelRow(lm.get("config.format.pct.text", "Pct"),
+                                                    settings, "carousel_pct", self, show_text_input=False))
+            grp_carousel.add(self.exp_car_pct)
+
+            def _update_carousel_vis(sw, *args):
+                active = sw.get_active()
+                self.exp_car_settings.set_visible(active)
+                self.exp_car_name.set_visible(active)
+                self.exp_car_icons.set_visible(active)
+                self.exp_car_pct.set_visible(active)
+            self.switch_carousel.connect("notify::active", _update_carousel_vis)
+            _update_carousel_vis(self.switch_carousel)
 
             # Sync visibility of B-related rows with the current dual-mode state.
             self.exp_dev_b.set_visible(settings.get("dual_mode", False))
@@ -1146,7 +1210,7 @@ class PipeWireAudioMixer(PipeWireActionBase):
             # Fill the preview once the panel is mapped.
             GLib.timeout_add(250, self._preview_first_fill)
 
-            return [grp_preview, grp_devices, grp_misc]
+            return [grp_preview, grp_devices, grp_misc, grp_monitor, grp_carousel]
         except Exception as e:
             log.error("Error building config rows: %s\n%s", e, traceback.format_exc())
             return [Adw.ActionRow(title=f"ERROR: {e}")]

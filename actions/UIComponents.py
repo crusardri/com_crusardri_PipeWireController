@@ -1011,30 +1011,13 @@ class DeviceConfigGroup(UIComponentsBase):
         self.notify_parent()
 
 
-class VolumeMonitorConfigRow(UIComponentsBase):
-    """Peak monitor configuration: activation, modes, colors and timing."""
-
+class VolumeMonitorBarRow(UIComponentsBase):
+    """Peak monitor configuration: bar mode, colors, db."""
     def __init__(self, settings, parent):
         super().__init__(settings, parent)
         lm = self.lm
-
         self.main_box = self.build_main_box()
-
-        # Activation: everything below is greyed out when disabled.
-        self.sw_enable = self.create_switch_row(
-            self.main_box, lm.get("config.monitor.enable", "Enable Volume Monitor"),
-            "monitor_enabled", False, callback=self.on_enable_change,
-            bold=True, section_reset=True)
-        self._register(lambda: self.settings_container.set_sensitive(False))
-
-        lbl_warning = Gtk.Label(label=lm.get("config.monitor.app_warning",
-                                             "Monitor does not support individual applications. "
-                                             "It will monitor the entire output device instead."),
-                                xalign=0, wrap=True, css_classes=["dim-label"])
-        self.main_box.append(lbl_warning)
-
-        self.settings_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
-                                          spacing=self.SPACING)
+        self.settings_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=self.SPACING)
         self.main_box.append(self.settings_container)
 
         # Bar mode
@@ -1102,29 +1085,12 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         self.box_gradient.append(self.grad_config)
         self._register(self.grad_config.reset_to_defaults)
 
-        # Timing
-        self.cb_fps = self.create_combo_row(
-            self.settings_container, lm.get("config.monitor.fps", "Update Rate (FPS)"),
-            [(f, str(f)) for f in (1, 2, 5, 10, 15, 20)],
-            self.settings.get("monitor_fps", 10), key="monitor_fps", default_id=10)
+        # Invert bar
+        self.sw_mon_inv = self.create_switch_row(
+            self.settings_container, lm.get("config.monitor.invert", "Invert Bar"),
+            "monitor_invert", False)
 
-        lbl_fps_warn = Gtk.Label(label=lm.get("config.monitor.fps.warning",
-                                              "A high FPS rate increases CPU usage"),
-                                 xalign=0)
-        lbl_fps_warn.add_css_class("dim-label")
-        lbl_fps_warn.set_wrap(True)
-        self.settings_container.append(lbl_fps_warn)
-
-        bdel = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10, hexpand=True)
-        self.spin_delay = self.create_spin_row(
-            bdel, lm.get("config.monitor.delay", "Switch Delay (s)"), "monitor_delay",
-            lo=1, hi=60, default=5, label_hexpand=True)
-        self.settings_container.append(bdel)
-
-        # Show dB
-        self.sw_db = self.create_switch_row(
-            self.settings_container, lm.get("config.monitor.show_db", "Show Decibels"),
-            "monitor_show_db", False)
+        self.add_section_separator(self.settings_container)
 
         # RMS Indicator
         self.sw_rms = self.create_switch_row(
@@ -1159,11 +1125,6 @@ class VolumeMonitorConfigRow(UIComponentsBase):
                               ("monitor_rms_out_color",))
         self.settings_container.append(self.brms_options2)
 
-        # Invert bar
-        self.sw_mon_inv = self.create_switch_row(
-            self.settings_container, lm.get("config.monitor.invert", "Invert Bar"),
-            "monitor_invert", False)
-
         self.update_visibility()
 
     def _create_threshold_spin(self, key, default):
@@ -1185,12 +1146,6 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         self.add_reset_button(r, lambda: set_color_button(btn, def_color), (color_key,))
         self.box_tricolor.append(r)
 
-    def on_enable_change(self, *args):
-        if self._updating:
-            return
-        self.on_change()
-        self.update_visibility()
-
     def on_color_mode_change(self, *args):
         if self._updating:
             return
@@ -1208,7 +1163,6 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         self.update_visibility()
 
     def update_visibility(self):
-        self.settings_container.set_sensitive(self.sw_enable.get_active())
         cmode = int(dropdown_get_id(self.cb_color_mode) or 0)
         self.box_solid.set_visible(cmode == 0)
         self.box_tricolor.set_visible(cmode == 1)
@@ -1220,7 +1174,6 @@ class VolumeMonitorConfigRow(UIComponentsBase):
     def on_change(self, *args):
         if self._updating:
             return
-        self.save_or_del("monitor_enabled", self.sw_enable.get_active(), False)
         self.save_or_del("monitor_bar_mode", int(dropdown_get_id(self.cb_bar_mode) or 0), 0)
         self.save_or_del("monitor_color_mode", int(dropdown_get_id(self.cb_color_mode) or 0), 0)
         self.save_or_del("monitor_auto_darken", int(self.spin_monitor_darken.get_value()), 0)
@@ -1231,9 +1184,6 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         self.save_or_del("monitor_threshold_mid", int(self.spin_threshold_mid.get_value()))
         self.save_or_del("monitor_threshold_high", int(self.spin_threshold_high.get_value()))
         self.grad_config.save_settings()
-        self.save_or_del("monitor_fps", int(dropdown_get_id(self.cb_fps) or 10), 10)
-        self.save_or_del("monitor_delay", int(self.spin_delay.get_value()))
-        self.save_or_del("monitor_show_db", self.sw_db.get_active(), False)
         self.save_or_del("monitor_show_rms", self.sw_rms.get_active(), False)
         self.save_or_del("monitor_rms_color", rgba_to_hex(self.btn_rms_color.get_rgba()))
         self.save_or_del("monitor_rms_out_color", rgba_to_hex(self.btn_rms_out_color.get_rgba()))
@@ -1242,29 +1192,60 @@ class VolumeMonitorConfigRow(UIComponentsBase):
         self.notify_parent()
 
 
-class CarouselConfigRow(UIComponentsBase):
-    """Carousel configuration: activation, device filters, icon layout and texts."""
+class VolumeMonitorSettingsRow(UIComponentsBase):
+    """Peak monitor configuration: FPS and Switch Delay."""
+    def __init__(self, settings, parent):
+        super().__init__(settings, parent)
+        lm = self.lm
+        self.main_box = self.build_main_box()
+        self.settings_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=self.SPACING)
+        self.main_box.append(self.settings_container)
 
+        self.cb_fps = self.create_combo_row(
+            self.settings_container, lm.get("config.monitor.fps", "Update Rate (FPS)"),
+            [(f, str(f)) for f in (1, 2, 5, 10, 15, 20)],
+            self.settings.get("monitor_fps", 10), key="monitor_fps", default_id=10)
+
+        lbl_fps_warn = Gtk.Label(label=lm.get("config.monitor.fps.warning",
+                                              "A high FPS rate increases CPU usage"),
+                                 xalign=0)
+        lbl_fps_warn.add_css_class("dim-label")
+        lbl_fps_warn.set_wrap(True)
+        self.settings_container.append(lbl_fps_warn)
+        
+        self.add_section_separator(self.settings_container)
+
+        # Show dB
+        self.sw_db = self.create_switch_row(
+            self.settings_container, lm.get("config.monitor.show_db", "Show Decibels"),
+            "monitor_show_db", False)
+
+        self.add_section_separator(self.settings_container)
+
+        bdel = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10, hexpand=True)
+        self.spin_delay = self.create_spin_row(
+            bdel, lm.get("config.monitor.delay", "Switch Delay (s)"), "monitor_delay",
+            lo=1, hi=60, default=5, label_hexpand=True)
+        self.settings_container.append(bdel)
+
+    def on_change(self, *args):
+        if self._updating:
+            return
+        self.save_or_del("monitor_fps", int(dropdown_get_id(self.cb_fps) or 10), 10)
+        self.save_or_del("monitor_delay", int(self.spin_delay.get_value()))
+        self.save_or_del("monitor_show_db", self.sw_db.get_active(), False)
+        self.notify_parent()
+
+
+class CarouselSettingsRow(UIComponentsBase):
+    """Carousel configuration: device filters and switch delay."""
     def __init__(self, settings_dict, parent_action):
         super().__init__(settings_dict, parent_action)
         lm = self.lm
-
         self.main_box = self.build_main_box()
-
-        # Activation: everything below is greyed out when disabled.
-        self.sw_enable = self.create_switch_row(
-            self.main_box, lm.get("config.carousel.enable", "Enable Device Carousel"),
-            "carousel_enabled", False, callback=self.on_enable_change,
-            bold=True, section_reset=True)
-        self._register(lambda: self.settings_container.set_sensitive(False))
-
-        self.settings_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
-                                          spacing=self.SPACING)
+        self.settings_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=self.SPACING)
         self.main_box.append(self.settings_container)
 
-        # Device filters
-        self.add_section_title(self.settings_container,
-                               lm.get("config.carousel.filters.title", "Shown Devices"))
         toggles = [
             ("carousel_show_sinks", "config.carousel.show_sinks", False),
             ("carousel_show_sources", "config.carousel.show_sources", False),
@@ -1279,9 +1260,30 @@ class CarouselConfigRow(UIComponentsBase):
 
         self.add_section_separator(self.settings_container)
 
-        # Icon layout: visible count + per-tier size/opacity/position.
-        self.add_section_title(self.settings_container,
-                               lm.get("config.carousel.icons.title", "Carousel Icons"))
+        bdel = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10, hexpand=True)
+        self.spin_delay = self.create_spin_row(
+            bdel, lm.get("config.monitor.delay", "Switch Delay (s)"), "carousel_delay",
+            lo=1, hi=60, default=10, label_hexpand=True)
+        self.settings_container.append(bdel)
+
+    def on_change(self, *args):
+        if self._updating:
+            return
+        for key, sw in self.toggle_switches.items():
+            self.save_or_del(key, sw.get_active())
+        self.save_or_del("carousel_delay", int(self.spin_delay.get_value()))
+        self.notify_parent()
+
+
+class CarouselIconsRow(UIComponentsBase):
+    """Carousel configuration: icon layout."""
+    def __init__(self, settings_dict, parent_action):
+        super().__init__(settings_dict, parent_action)
+        lm = self.lm
+        self.main_box = self.build_main_box()
+        self.settings_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=self.SPACING)
+        self.main_box.append(self.settings_container)
+
         self.count_combo = self.create_combo_row(
             self.settings_container, lm.get("config.carousel.icon_count", "Visible Icons"),
             [(c, str(c)) for c in (3, 5, 7)],
@@ -1297,6 +1299,7 @@ class CarouselConfigRow(UIComponentsBase):
         lbl_opacity = lm.get("config.carousel.icon_opacity", "Opacity %")
         self.tier_spins = {}
         for tier, title in tier_titles:
+            self.add_section_separator(self.settings_container)
             self.settings_container.append(Gtk.Label(label=title, xalign=0,
                                                      css_classes=["dim-label"]))
             row_size = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
@@ -1313,37 +1316,9 @@ class CarouselConfigRow(UIComponentsBase):
                 row_pos, lm.get("config.pos.y", "Y"), f"carousel_y_{tier}", margin_start=10)
             self.settings_container.append(row_pos)
 
-        self.add_section_separator(self.settings_container)
-
-        # Text formats: embedded so they share this row's padding and width.
-        self.name_row = CustomLabelRow(lm.get("config.carousel.name_format", "Name Format"),
-                                       settings_dict, "carousel_name", parent_action,
-                                       show_text_input=False, embedded=True)
-        self.name_row.set_activatable(False)
-        self.settings_container.append(self.name_row)
-
-        self.add_section_separator(self.settings_container)
-
-        self.pct_row = CustomLabelRow(lm.get("config.carousel.pct_format", "Volume Format"),
-                                      settings_dict, "carousel_pct", parent_action,
-                                      show_text_input=False, embedded=True)
-        self.pct_row.set_activatable(False)
-        self.settings_container.append(self.pct_row)
-
-        self.settings_container.set_sensitive(self.sw_enable.get_active())
-
-    def on_enable_change(self, *args):
-        if self._updating:
-            return
-        self.on_change()
-        self.settings_container.set_sensitive(self.sw_enable.get_active())
-
     def on_change(self, *args):
         if self._updating:
             return
-        self.save_or_del("carousel_enabled", self.sw_enable.get_active(), False)
-        for key, sw in self.toggle_switches.items():
-            self.save_or_del(key, sw.get_active())
         self.save_or_del("carousel_count", int(dropdown_get_id(self.count_combo) or 5))
         for key, spin in self.tier_spins.items():
             self.save_or_del(key, int(spin.get_value()))

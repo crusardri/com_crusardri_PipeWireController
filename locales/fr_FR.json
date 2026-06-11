@@ -1,6 +1,5 @@
 {
     "plugin.name": "PipeWire Controller",
-
     "config.device.title": "Périphérique",
     "config.device.default": "Par défaut du système",
     "config.type.title": "Type de Périphérique",
@@ -18,7 +17,7 @@
     "config.align.center": "Centre",
     "config.align.right": "Droite",
     "config.outline.title": "Largeur contour:",
-    "config.outline.color": "Couleur cont.:",
+    "config.outline.color": "Couleur du Contour",
     "config.pos.x": "Pos X:",
     "config.pos.y": "Pos Y:",
     "config.size.width": "Largeur:",
@@ -60,7 +59,6 @@
     "config.mixer.settings.title": "Paramètres du mixeur",
     "config.auto_index.title": "Index automatique #",
     "config.auto_index.subtitle": "0 = désactivé. Utilisé pour les apps",
-
     "config.monitor.title": "Moniteur de Volume",
     "config.monitor.enable": "Activer le Moniteur de Volume",
     "config.monitor.bar_mode": "Mode de Barre",
@@ -87,7 +85,6 @@
     "config.monitor.rms_color": "Couleur de l'Indicateur",
     "config.monitor.rms_outline": "Contour",
     "config.outline.width": "Largeur du Contour",
-    "config.outline.color": "Couleur du Contour",
     "config.monitor.fps.warning": "Une fréquence d'images élevée augmente l'utilisation du processeur",
     "config.monitor.app_warning": "Le moniteur ne prend pas en charge les applications individuelles. Le périphérique de sortie complet sera surveillé à la place.",
     "config.monitor.solid_auto": "Solide Auto (Icône)",
@@ -103,5 +100,16 @@
     "config.carousel.name_format": "Format du Nom",
     "config.carousel.pct_format": "Format du Volume",
     "config.carousel.no_devices": "Aucun appareil",
-    "actions.pipewire-mixer.event.touch": "Action Tactile"
+    "actions.pipewire-mixer.event.touch": "Action Tactile",
+    "config.carousel.filters.title": "Appareils Affichés",
+    "config.carousel.icons.title": "Icônes du Carrousel",
+    "config.carousel.icon_count": "Icônes Visibles",
+    "config.carousel.icon_size": "Taille",
+    "config.carousel.icon_opacity": "Opacité %",
+    "config.carousel.tier.primary": "Icône Principale (centre)",
+    "config.carousel.tier.secondary": "Icônes Secondaires",
+    "config.carousel.tier.tertiary": "Icônes Tertiaires",
+    "config.preview.title": "Aperçu",
+    "config.mixer.devices": "Appareils",
+    "config.reset_all": "Tout réinitialiser"
 }

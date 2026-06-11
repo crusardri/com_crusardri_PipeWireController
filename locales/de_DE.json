@@ -1,6 +1,5 @@
 {
     "plugin.name": "PipeWire Controller",
-
     "config.device.title": "Gerät",
     "config.device.default": "Systemstandard",
     "config.type.title": "Gerätetyp",
@@ -18,7 +17,7 @@
     "config.align.center": "Mitte",
     "config.align.right": "Rechts",
     "config.outline.title": "Umrissbreite:",
-    "config.outline.color": "Umrissfarbe:",
+    "config.outline.color": "Umrissfarbe",
     "config.pos.x": "Pos X:",
     "config.pos.y": "Pos Y:",
     "config.size.width": "Breite:",
@@ -84,7 +83,6 @@
     "config.monitor.rms_color": "Indikatorfarbe",
     "config.monitor.rms_outline": "Umriss",
     "config.outline.width": "Umrissbreite",
-    "config.outline.color": "Umrissfarbe",
     "config.monitor.fps.warning": "Eine hohe Bildrate erhöht die CPU-Auslastung",
     "config.monitor.app_warning": "Der Monitor unterstützt keine einzelnen Anwendungen. Stattdessen wird das gesamte Ausgabegerät überwacht.",
     "config.monitor.solid_auto": "Vollfarbe Auto (Symbol)",
@@ -100,5 +98,16 @@
     "config.carousel.name_format": "Namensformat",
     "config.carousel.pct_format": "Lautstärkeformat",
     "config.carousel.no_devices": "Keine Geräte",
-    "actions.pipewire-mixer.event.touch": "Touch-Aktion"
+    "actions.pipewire-mixer.event.touch": "Touch-Aktion",
+    "config.carousel.filters.title": "Angezeigte Geräte",
+    "config.carousel.icons.title": "Karussell-Symbole",
+    "config.carousel.icon_count": "Sichtbare Symbole",
+    "config.carousel.icon_size": "Größe",
+    "config.carousel.icon_opacity": "Deckkraft %",
+    "config.carousel.tier.primary": "Hauptsymbol (Mitte)",
+    "config.carousel.tier.secondary": "Sekundäre Symbole",
+    "config.carousel.tier.tertiary": "Tertiäre Symbole",
+    "config.preview.title": "Vorschau",
+    "config.mixer.devices": "Geräte",
+    "config.reset_all": "Alles zurücksetzen"
 }

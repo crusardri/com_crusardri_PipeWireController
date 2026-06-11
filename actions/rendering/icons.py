@@ -115,6 +115,40 @@ def extract_palette(pil_img, num_colors=3):
         return ["#ffffff"] * num_colors
 
 
+# Pulse/PipeWire stream property keys that may name the application's icon,
+# in priority order.  Flatpak apps often do not set 'application.icon_name'
+# but do expose their app ID (e.g. "com.spotify.Client"), which icon themes
+# resolve through the icon the flatpak exports to the host.
+_ICON_NAME_KEYS = (
+    "application.icon_name",
+    "pipewire.access.portal.app_id",
+    "flatpak.app_id",
+    "application.id",
+    "application.process.binary",
+    "application.name",
+)
+
+
+def lookup_app_icon(proplist, size=48):
+    """Resolve an application icon path from a Pulse/PipeWire property list.
+
+    Tries each known property key (icon name, flatpak app ID, binary name,
+    application name) against the GTK icon theme, including a lowercase
+    variant of each value.  Returns the first matching path, or None.
+    """
+    if not proplist:
+        return None
+    for key in _ICON_NAME_KEYS:
+        name = proplist.get(key)
+        if not name:
+            continue
+        for candidate in (name, name.lower()):
+            path = lookup_theme_icon(candidate, size)
+            if path:
+                return path
+    return None
+
+
 def lookup_theme_icon(icon_name, size=48):
     """Look up an icon by name in the current GTK icon theme.
 

@@ -7,6 +7,7 @@ The action manages a dynamic GLib timer (_on_tick_timer) that self-adjusts
 its interval based on whether the peak monitor is active.  In idle mode the
 timer fires every 200 ms; during monitoring it fires at the configured FPS.
 """
+import io
 import os
 import time
 import logging
@@ -16,7 +17,7 @@ from types import SimpleNamespace
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw, GLib
+from gi.repository import Gtk, Adw, GLib, Gdk
 import cairo
 from PIL import Image, ImageDraw
 
@@ -45,9 +46,8 @@ IDLE_TICK_INTERVAL_S = 0.2
 MIN_TICK_MS = 20
 # pct_format value that disables the percentage text overlay.
 PCT_FORMAT_DISABLED = 5
-# Icon sizes used in the carousel overlay (pixels).
-CAROUSEL_ICON_CENTER = 48
-CAROUSEL_ICON_SIDE = 28
+# Allowed values for the number of icons visible in the carousel.
+CAROUSEL_COUNTS = (3, 5, 7)
 
 
 class PipeWireAudioMixer(PipeWireActionBase):
@@ -633,15 +633,14 @@ class PipeWireAudioMixer(PipeWireActionBase):
             auto_prefix = self.plugin_base.lm.get("config.device.auto", "Auto") + " "
             dev_name = settings.get(f"device_name_{suffix}") or (auto_prefix + "1")
 
-            icon_name = None
             if dev:
-                # Prefer the icon declared by the application in its stream properties.
-                icon_name = dev.proplist.get("application.icon_name") or \
-                    dev.proplist.get("application.process.binary")
+                # Try every icon-related stream property (covers flatpak apps
+                # that only expose their app ID instead of an icon name).
+                found = icons.lookup_app_icon(getattr(dev, "proplist", None))
             elif not dev_name.startswith(auto_prefix):
-                icon_name = dev_name
-
-            found = icons.lookup_theme_icon(icon_name)
+                found = icons.lookup_theme_icon(dev_name)
+            else:
+                found = None
             if found:
                 return found
         return self._default_icon_path(dtype)
@@ -777,6 +776,23 @@ class PipeWireAudioMixer(PipeWireActionBase):
                     icons.draw_mute_cross(overlay, x, y, icon.width, icon.height)
         cairo_img.alpha_composite(overlay)
         self.set_media(image=cairo_img)
+        self._update_preview(cairo_img)
+
+    def _update_preview(self, pil_img):
+        """Mirror the rendered face into the config panel's live preview.
+
+        Cheap no-op when the config panel is closed (picture not in a window).
+        """
+        pic = getattr(self, "_preview_picture", None)
+        if pic is None or pic.get_root() is None:
+            return
+        try:
+            buf = io.BytesIO()
+            pil_img.save(buf, format="PNG")
+            texture = Gdk.Texture.new_from_bytes(GLib.Bytes.new(buf.getvalue()))
+            GLib.idle_add(pic.set_paintable, texture)
+        except Exception as e:
+            log.debug("preview update error: %s", e)
 
     def _draw_monitor_bars(self, bars):
         """Delegate peak monitor drawing to BarRenderer.
@@ -877,29 +893,29 @@ class PipeWireAudioMixer(PipeWireActionBase):
     def _carousel_icon_path(self, dev_dict):
         """Resolve the icon path for a carousel entry.
 
-        For app entries: look up the theme icon by the app's declared icon name.
+        For app entries: try every icon-related stream property (icon name,
+        flatpak app ID, binary name) against the GTK icon theme.
         For hardware entries: use the device-type default asset.
         """
         if dev_dict["type"] == "app":
-            proplist = getattr(dev_dict["dev"], "proplist", None) or {}
-            icon_name = proplist.get("application.icon_name") or \
-                proplist.get("application.process.binary")
-            found = icons.lookup_theme_icon(icon_name)
+            found = icons.lookup_app_icon(getattr(dev_dict["dev"], "proplist", None))
             if found:
                 return found
         return self._default_icon_path(dev_dict["type"])
 
     def _draw_carousel(self):
-        """Render the carousel overlay: centre icon (selected), side icons (neighbours).
+        """Render the carousel overlay: centre icon (selected) plus neighbours.
 
-        Layout:
-            - Left neighbour: 28 px, 80% opacity
-            - Centre (selected): 48 px, 100% opacity
-            - Right neighbour: 28 px, 80% opacity
+        The number of visible icons is configurable (3, 5 or 7).  Icons are
+        organised in tiers by distance from the centre:
+            tier 1 = centre (selected), tier 2 = adjacent, tier 3 = outer.
+        Each tier has its own configurable size, opacity and X/Y position
+        (settings carousel_size_N / carousel_opacity_N / carousel_x_N /
+        carousel_y_N); defaults scale with the canvas dimensions.
 
-        Device name and volume percentage are drawn as text below/above the icons.
-        When both devices resolve to different physical devices (mix mode), the
-        percentage is prefixed with "A " or "B " to indicate which slot is active.
+        Device name and volume percentage are drawn as text below/above the
+        icons.  In mix mode the percentage is prefixed with "A " or "B " to
+        indicate which slot is being assigned.
         """
         try:
             settings = self.get_settings()
@@ -915,34 +931,63 @@ class PipeWireAudioMixer(PipeWireActionBase):
 
             num_devs = len(self.carousel_devices)
             center_idx = self.carousel_index
-            center_y = (height - CAROUSEL_ICON_CENTER) // 2
-            side_y = (height - CAROUSEL_ICON_SIDE) // 2
-            center_x = (width - CAROUSEL_ICON_CENTER) // 2
-            left_x = int(width * 0.1)
-            right_x = int(width * 0.9) - CAROUSEL_ICON_SIDE
+
+            count = int(settings.get("carousel_count", defs["carousel_count"]))
+            count = min(CAROUSEL_COUNTS, key=lambda c: abs(c - count))
+
+            def tier_val(key, tier):
+                return int(settings.get(f"carousel_{key}_{tier}", defs[f"carousel_{key}_{tier}"]))
+
+            sizes = {t: max(1, tier_val("size", t)) for t in (1, 2, 3)}
+            opacities = {t: max(0, min(100, tier_val("opacity", t))) for t in (1, 2, 3)}
+            xs = {t: tier_val("x", t) for t in (1, 2, 3)}
+            ys = {t: tier_val("y", t) for t in (1, 2, 3)}
 
             base_img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
 
-            def paste_icon(idx, x, y, size, opacity):
+            def paste_icon(idx, x, y, size, opacity_pct):
                 """Load and composite a carousel icon at the given position."""
                 path = self._carousel_icon_path(self.carousel_devices[idx])
                 try:
                     pil_img = icons.load_icon_as_pil(path, size)
-                    if opacity < 255:
+                    if opacity_pct < 100:
                         # Apply opacity by scaling the alpha channel.
                         pil_img.putalpha(pil_img.getchannel("A").point(
-                            lambda p: int(p * (opacity / 255.0))))
+                            lambda p: int(p * (opacity_pct / 100.0))))
+                    if x < 0 or y < 0:
+                        # alpha_composite rejects negative destinations, so
+                        # crop the part that falls outside the canvas.
+                        crop_x, crop_y = max(0, -x), max(0, -y)
+                        if crop_x >= pil_img.width or crop_y >= pil_img.height:
+                            return
+                        pil_img = pil_img.crop((crop_x, crop_y, pil_img.width, pil_img.height))
+                        x, y = max(0, x), max(0, y)
                     base_img.alpha_composite(pil_img, (x, y))
                 except Exception as e:
                     log.debug("Error drawing carousel icon: %s", e)
 
-            # Draw neighbour icons first (behind the centre icon).
-            if num_devs >= 3:
-                paste_icon((center_idx - 1) % num_devs, left_x, side_y, CAROUSEL_ICON_SIDE, 230)
-                paste_icon((center_idx + 1) % num_devs, right_x, side_y, CAROUSEL_ICON_SIDE, 230)
-            elif num_devs == 2:
-                paste_icon((center_idx + 1) % num_devs, right_x, side_y, CAROUSEL_ICON_SIDE, 230)
-            paste_icon(center_idx, center_x, center_y, CAROUSEL_ICON_CENTER, 255)
+            # Build the side slots: alternate right/left by increasing distance,
+            # never showing more icons than there are devices.
+            slots = []
+            remaining = num_devs - 1
+            for dist in range(1, count // 2 + 1):
+                for side in (+1, -1):
+                    if remaining <= 0:
+                        break
+                    slots.append((dist, side))
+                    remaining -= 1
+
+            # Paint from the outside in so inner icons draw on top.
+            # The left X for distance N extrapolates the tier-2 → tier-3 spacing.
+            x_step = xs[2] - xs[3]
+            for dist, side in sorted(slots, key=lambda s: -s[0]):
+                tier = 2 if dist == 1 else 3
+                size = sizes[tier]
+                left_x = xs[2] - (dist - 1) * x_step
+                x = left_x if side < 0 else width - left_x - size
+                paste_icon((center_idx + side * dist) % num_devs,
+                           x, ys[tier], size, opacities[tier])
+            paste_icon(center_idx, xs[1], ys[1], sizes[1], opacities[1])
 
             fd = FontDefaults.from_global()
             current = self.carousel_devices[center_idx]
@@ -962,6 +1007,7 @@ class PipeWireAudioMixer(PipeWireActionBase):
             cairo_img = self._surface_to_pil(surface, width, height)
             cairo_img.alpha_composite(base_img)
             self.set_media(image=cairo_img)
+            self._update_preview(cairo_img)
         except Exception as e:
             log.error("Error drawing carousel: %s\n%s", e, traceback.format_exc())
             # Fallback: a red error image so the user knows something went wrong.
@@ -986,6 +1032,29 @@ class PipeWireAudioMixer(PipeWireActionBase):
         defs["width_carousel_name"] = width - (margin * 2)
         defs["width_carousel_pct"] = width - (margin * 2)
 
+        # Carousel icon tiers: 1 = centre (selected), 2 = adjacent, 3 = outer.
+        # Sizes scale with the smaller canvas dimension so the layout adapts
+        # to any key resolution (100x100, 117x180, 100x200, ...).
+        ref = min(width, height)
+        size_1 = int(round(ref * 0.48))
+        size_2 = int(round(ref * 0.28))
+        size_3 = int(round(ref * 0.18))
+        defs["carousel_count"] = 5
+        defs["carousel_size_1"] = size_1
+        defs["carousel_size_2"] = size_2
+        defs["carousel_size_3"] = size_3
+        defs["carousel_opacity_1"] = 100
+        defs["carousel_opacity_2"] = 80
+        defs["carousel_opacity_3"] = 50
+        # X positions are for the LEFT icon of each pair; the right icon is
+        # mirrored automatically.  Tier 1 is the centre icon (absolute).
+        defs["carousel_x_1"] = (width - size_1) // 2
+        defs["carousel_y_1"] = (height - size_1) // 2
+        defs["carousel_x_2"] = int(round(width * 0.10))
+        defs["carousel_y_2"] = (height - size_2) // 2
+        defs["carousel_x_3"] = max(0, int(round(width * 0.02)))
+        defs["carousel_y_3"] = (height - size_3) // 2
+
         return defs, width, height
 
     # ------------------------------------------------------------------
@@ -1002,20 +1071,34 @@ class PipeWireAudioMixer(PipeWireActionBase):
             settings = self.get_settings()
             lm = self.plugin_base.lm
 
-            # Device A expander
-            self.exp_dev_a = Adw.ExpanderRow(title=lm.get("config.mixer.device_a", "Device A (Left)"))
-            self.exp_dev_a.add_row(DeviceConfigGroup(self, suffix="a"))
+            # Live preview of the dial face, updated on every redraw.
+            grp_preview = Adw.PreferencesGroup(title=lm.get("config.preview.title", "Preview"))
+            self._preview_picture = Gtk.Picture()
+            self._preview_picture.set_content_fit(Gtk.ContentFit.CONTAIN)
+            self._preview_picture.set_size_request(-1, 130)
+            self._preview_picture.set_margin_top(8)
+            self._preview_picture.set_margin_bottom(8)
+            preview_row = Adw.PreferencesRow(activatable=False)
+            preview_row.set_child(self._preview_picture)
+            grp_preview.add(preview_row)
 
-            # Device B expander (hidden when dual mode is off)
-            self.exp_dev_b = Adw.ExpanderRow(title=lm.get("config.mixer.device_b", "Device B (Right)"))
-            self.exp_dev_b.add_row(DeviceConfigGroup(self, suffix="b"))
-
-            # Mode group: enables/disables dual-device mixer
-            grp_mode = Adw.PreferencesGroup(title=lm.get("config.mode.title", "Mode"))
+            # Devices group: the mixer toggle lives at the same level as the
+            # device expanders — enabling it reveals Device B.
+            grp_devices = Adw.PreferencesGroup(title=lm.get("config.mixer.devices", "Devices"))
             self.switch_dual = Adw.SwitchRow(title=lm.get("config.mixer.dual_mode", "Enable Mixer"))
             self.switch_dual.set_active(settings.get("dual_mode", False))
             self.switch_dual.connect("notify::active", self.on_dual_mode_change)
-            grp_mode.add(self.switch_dual)
+            grp_devices.add(self.switch_dual)
+
+            # Device A expander
+            self.exp_dev_a = Adw.ExpanderRow(title=lm.get("config.mixer.device_a", "Device A (Left)"))
+            self.exp_dev_a.add_row(DeviceConfigGroup(settings, self, suffix="a"))
+            grp_devices.add(self.exp_dev_a)
+
+            # Device B expander (hidden when dual mode is off)
+            self.exp_dev_b = Adw.ExpanderRow(title=lm.get("config.mixer.device_b", "Device B (Right)"))
+            self.exp_dev_b.add_row(DeviceConfigGroup(settings, self, suffix="b"))
+            grp_devices.add(self.exp_dev_b)
 
             # Misc settings group
             grp_misc = Adw.PreferencesGroup(title=lm.get("config.mixer.settings.title", "Mixer Settings"))
@@ -1060,10 +1143,18 @@ class PipeWireAudioMixer(PipeWireActionBase):
             self.exp_dev_b.set_visible(settings.get("dual_mode", False))
             self.exp_icon_b.set_visible(settings.get("dual_mode", False))
 
-            return [grp_mode, self.exp_dev_a, self.exp_dev_b, grp_misc]
+            # Fill the preview once the panel is mapped.
+            GLib.timeout_add(250, self._preview_first_fill)
+
+            return [grp_preview, grp_devices, grp_misc]
         except Exception as e:
             log.error("Error building config rows: %s\n%s", e, traceback.format_exc())
             return [Adw.ActionRow(title=f"ERROR: {e}")]
+
+    def _preview_first_fill(self):
+        """One-shot timer: render once so the preview is populated on open."""
+        self.draw_image()
+        return False
 
     def save_setting(self, key, value):
         """Persist a single setting key and trigger a redraw."""

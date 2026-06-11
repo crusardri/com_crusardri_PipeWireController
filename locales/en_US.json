@@ -1,6 +1,5 @@
 {
     "plugin.name": "PipeWire Controller",
-
     "config.device.title": "Device",
     "config.device.default": "System Default",
     "config.type.title": "Device Type",
@@ -18,7 +17,7 @@
     "config.align.center": "Center",
     "config.align.right": "Right",
     "config.outline.title": "Outline Width:",
-    "config.outline.color": "Out. Color:",
+    "config.outline.color": "Outline Color",
     "config.pos.x": "Pos X:",
     "config.pos.y": "Pos Y:",
     "config.size.width": "Width:",
@@ -60,7 +59,6 @@
     "config.mixer.settings.title": "Mixer Settings",
     "config.auto_index.title": "Auto-index #",
     "config.auto_index.subtitle": "0 = disabled. Used for apps",
-    
     "config.monitor.title": "Volume Monitor",
     "config.monitor.enable": "Enable Volume Monitor",
     "config.monitor.bar_mode": "Bar Mode",
@@ -85,7 +83,6 @@
     "config.monitor.rms_color": "Indicator Color",
     "config.monitor.rms_outline": "Outline",
     "config.outline.width": "Outline Width",
-    "config.outline.color": "Outline Color",
     "config.monitor.fps.warning": "A high FPS rate increases CPU usage",
     "config.monitor.app_warning": "Monitor does not support individual applications. It will monitor the entire output device instead.",
     "config.monitor.solid_auto": "Solid Auto (Icon)",
@@ -101,5 +98,16 @@
     "config.carousel.name_format": "Name Format",
     "config.carousel.pct_format": "Volume Format",
     "config.carousel.no_devices": "No devices",
-    "actions.pipewire-mixer.event.touch": "Touch Action"
+    "actions.pipewire-mixer.event.touch": "Touch Action",
+    "config.carousel.filters.title": "Shown Devices",
+    "config.carousel.icons.title": "Carousel Icons",
+    "config.carousel.icon_count": "Visible Icons",
+    "config.carousel.icon_size": "Size",
+    "config.carousel.icon_opacity": "Opacity %",
+    "config.carousel.tier.primary": "Primary Icon (centre)",
+    "config.carousel.tier.secondary": "Secondary Icons",
+    "config.carousel.tier.tertiary": "Tertiary Icons",
+    "config.preview.title": "Preview",
+    "config.mixer.devices": "Devices",
+    "config.reset_all": "Reset all"
 }

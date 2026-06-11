@@ -16,7 +16,6 @@ import subprocess
 import os
 import fcntl
 import select
-import time
 
 log = logging.getLogger(__name__)
 
@@ -29,12 +28,7 @@ class PeakMonitor:
     SAMPLE_RATE = 44100
     DECAY_FACTOR = 0.85  # smooth peak decay per read cycle
 
-    def __init__(self, pulse_lock=None):
-        """
-        Args:
-            pulse_lock: Optional threading.Lock shared with plugin for pulsectl access.
-                        If None, PeakMonitor creates its own pulsectl connection.
-        """
+    def __init__(self):
         self._peak = [0.0, 0.0]  # L, R linear amplitude 0.0-1.0+
         self._rms = [0.0, 0.0]
         self._lock = threading.Lock()
@@ -44,6 +38,10 @@ class PeakMonitor:
         self._current_device = None
         self._monitor_source_name = None
         self._stop_event = threading.Event()
+
+    @property
+    def is_running(self):
+        return self._running
 
     @staticmethod
     def linear_to_db(linear):

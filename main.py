@@ -1,18 +1,19 @@
-
-import threading
-import pulsectl
-
 from src.backend.PluginManager.PluginBase import PluginBase
 from src.backend.PluginManager.ActionHolder import ActionHolder
-
-from .actions.PipeWireAudioMixer import PipeWireAudioMixer
 from src.backend.DeckManagement.InputIdentifier import Input
 from src.backend.PluginManager.ActionInputSupport import ActionInputSupport
+
+from .actions.core.pulse_service import PulseService
+from .actions.PipeWireAudioMixer import PipeWireAudioMixer
+
 
 class PipeWireController(PluginBase):
     def __init__(self):
         super().__init__()
-        self.init_vars()
+        self.lm = self.locale_manager
+        self.lm.set_to_os_default()
+
+        self.pulse_service = PulseService()
 
         self.mixer_action_holder = ActionHolder(
             plugin_base=self,
@@ -33,11 +34,3 @@ class PipeWireController(PluginBase):
             plugin_version="1.0.0",
             app_version="1.4.11-beta"
         )
-
-    def init_vars(self):
-        self.lm = self.locale_manager
-        self.lm.set_to_os_default()
-        
-        # Connect to pulseaudio/pipewire server with a lock for threading safety
-        self.pulse = pulsectl.Pulse("stream-controller-pipewire", threading_lock=True)
-        self.pulse_lock = threading.RLock()

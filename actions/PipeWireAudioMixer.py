@@ -537,10 +537,15 @@ class PipeWireAudioMixer(PipeWireActionBase):
         configured device so the user sees their current setting highlighted.
         """
         self.carousel_target = new_target
-        cur_target_str = self.get_settings().get(f"device_target_{new_target}", "auto")
+        settings = self.get_settings()
+        cur_type = settings.get(f"device_type_{new_target}", "sink")
+        cur_name = settings.get(f"device_name_{new_target}", "default")
+        
         self.carousel_index = 0
         for i, d in enumerate(self.carousel_devices):
-            if cur_target_str == f"{d['type']}_{d['id']}":
+            d_type = "application" if d["type"] == "app" else d["type"]
+            d_name = d.get("target_name", "")
+            if cur_type == d_type and cur_name == d_name:
                 self.carousel_index = i
                 break
 
@@ -575,6 +580,8 @@ class PipeWireAudioMixer(PipeWireActionBase):
 
             if settings.get("carousel_show_sources", False):
                 for dev in pulse.source_list():
+                    if dev.name.endswith(".monitor"):
+                        continue
                     devices.append({"type": "source", "id": dev.index, "name": dev.description,
                                     "target_name": dev.name, "dev": dev})
 
@@ -585,11 +592,11 @@ class PipeWireAudioMixer(PipeWireActionBase):
                         devices.append({"type": "app", "id": dev.index, "name": t_name,
                                         "target_name": t_name, "dev": dev})
 
-        # Deduplicate by a stable key (app by binary name, hardware by PulseAudio index).
+        # Deduplicate by type and target_name (allows 'Default' and concrete device to coexist).
         seen = set()
         unique_devices = []
         for d in devices:
-            key = f"app_{d['target_name']}" if d["type"] == "app" else f"{d['type']}_{d['id']}"
+            key = f"{d['type']}_{d['target_name']}"
             if key not in seen:
                 seen.add(key)
                 unique_devices.append(d)

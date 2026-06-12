@@ -11,6 +11,7 @@ from src.backend.PluginManager.ActionInputSupport import ActionInputSupport
 
 from .actions.core.pulse_service import PulseService
 from .actions.PipeWireAudioMixer import PipeWireAudioMixer
+from .actions.SetDefaultDevice import SetDefaultDevice
 
 
 class PipeWireController(PluginBase):
@@ -39,6 +40,20 @@ class PipeWireController(PluginBase):
             }
         )
         self.add_action_holder(self.mixer_action_holder)
+
+        # Register the Set Default Device action (keys + dials).
+        self.set_default_action_holder = ActionHolder(
+            plugin_base=self,
+            action_base=SetDefaultDevice,
+            action_id_suffix="SetDefaultDeviceAction",
+            action_name=self.lm.get("actions.set-default.name", "Set Default Device"),
+            action_support={
+                Input.Key: ActionInputSupport.SUPPORTED,
+                Input.Dial: ActionInputSupport.SUPPORTED,
+                Input.Touchscreen: ActionInputSupport.UNSUPPORTED
+            }
+        )
+        self.add_action_holder(self.set_default_action_holder)
 
         # Announce the plugin to StreamController (name, repo, versions).
         self.register(

@@ -140,6 +140,60 @@ class PulseService:
             return None
         return self.call(_get)
 
+    def get_default_name(self, device_type):
+        """Return the system default sink or source name (or None)."""
+        info = self.server_info()
+        if not info:
+            return None
+        return info.default_sink_name if device_type == "sink" else info.default_source_name
+
+    def list_devices(self, device_type, skip_monitors=True):
+        """Return [(name, description)] for the given type's available devices.
+
+        For sources, monitor devices are skipped by default (they mirror sinks
+        and are rarely useful as a capture default).
+        """
+        devices = self.sink_list() if device_type == "sink" else self.source_list()
+        out = []
+        for d in devices:
+            name = getattr(d, "name", "")
+            if device_type == "source" and skip_monitors and (
+                    name.endswith(".monitor")
+                    or getattr(d, "description", "").startswith("Monitor of")):
+                continue
+            out.append((name, getattr(d, "description", name)))
+        return out
+
+    def device_description(self, device_type, name):
+        """Return the description for a device name, or None if it is offline."""
+        for n, desc in self.list_devices(device_type, skip_monitors=False):
+            if n == name:
+                return desc
+        return None
+
+    def is_device_available(self, device_type, name):
+        """Return True when a sink/source with `name` is currently present."""
+        return any(n == name for n, _ in self.list_devices(device_type, skip_monitors=False))
+
+    def set_default(self, device_type, name):
+        """Set the system default sink/source by name.
+
+        Returns True on success, False if the device is offline or the call
+        fails.  Invalidates the snapshot so the next read sees the new default.
+        """
+        if not name or not self.is_device_available(device_type, name):
+            return False
+
+        def _set(p):
+            if device_type == "sink":
+                p.sink_default_set(name)
+            else:
+                p.source_default_set(name)
+            return True
+        ok = self.call(_set, default=False)
+        self.invalidate_snapshot()
+        return bool(ok)
+
     # ------------------------------------------------------------------
     # Volume / mute
     # ------------------------------------------------------------------

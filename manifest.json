@@ -1,5 +1,5 @@
 {
-    "version": "0.0.1.Beta",
+    "version": "1.0.0",
     "id": "com_crusardri_PipeWireController",
     "name": "PipeWire Audio Controller",
     "thumbnail": "store/Thumbnail.png",

@@ -5,6 +5,7 @@ BarRenderer is purely a VIEW: it never touches PulseAudio.  All values
 onto an existing cairo context.
 """
 import cairo
+import math
 
 from .colors import parse_color, darken, DEFAULT_GRADIENT_COLORS
 from .shapes import rounded_rect, rounded_rect_custom
@@ -18,6 +19,7 @@ STYLE_TWO_BARS = 0       # one bar per device, stacked (mixer mode only)
 STYLE_ONE_BAR = 1        # single bar with no position marker
 STYLE_ONE_BAR_TRIANGLE = 2  # single bar + triangle marker
 STYLE_ONE_BAR_LINE = 3   # single bar + vertical line marker
+STYLE_ONE_BAR_DOT = 4    # single bar + dot (circle) marker
 
 
 def _db_to_pct(db):
@@ -228,10 +230,10 @@ class BarRenderer:
         else:
             return self.x - (self.fill_lo * virt_w), virt_w
 
-    def _volume_widths(self, vol_pct):
+    def _volume_widths(self, vol_pct, virt_w):
         """Compute the normal-range and over-100% fill widths for a given volume."""
-        active_w = min(self.w, int(self.w * (min(vol_pct, 100.0) / 100.0)))
-        over_w = int(self.w * (min(50.0, max(0.0, vol_pct - 100.0)) / 100.0))
+        active_w = int(virt_w * (min(vol_pct, 100.0) / 100.0))
+        over_w = int(virt_w * (min(50.0, max(0.0, vol_pct - 100.0)) / 100.0))
         return active_w, over_w
 
     # ------------------------------------------------------------------
@@ -249,14 +251,23 @@ class BarRenderer:
             self.ctx.save()
             self._bar_path(y)
             self.ctx.clip()
+            
+            virt_left, virt_w = self._virtual_geometry(invert)
             c_bar = self.color_source("bar", suffix, "#FFFFFF", invert)
-            active_w, over_w = self._volume_widths(vol_pct)
+            active_w, over_w = self._volume_widths(vol_pct, virt_w)
+            
+            if invert:
+                virt_right = virt_left + virt_w
+                fill_start = virt_right - active_w
+                over_start = virt_right - over_w
+            else:
+                fill_start = virt_left
+                over_start = virt_left
+
             if active_w > 0:
-                start_x = self.x if not invert else self.x + self.w - active_w
-                self.fill(start_x, active_w, 0, c_bar, y)
+                self.fill(fill_start, active_w, 0, c_bar, y)
             if over_w > 0:
-                start_x = self.x if not invert else self.x + self.w - over_w
-                self.fill(start_x, over_w, 0, self.c_over, y)
+                self.fill(over_start, over_w, 0, self.c_over, y)
             self.ctx.restore()
         self.outline(y)
 
@@ -275,15 +286,19 @@ class BarRenderer:
             self._bar_path(y)
             self.ctx.clip()
 
-            active_w, over_w = self._volume_widths(vol_pct)
+            virt_left, virt_w = self._virtual_geometry(self.invert)
+            active_w, over_w = self._volume_widths(vol_pct, virt_w)
+            
             if self.invert:
-                fill_start = self.x + self.w - active_w
-                over_start = self.x + self.w - over_w
+                virt_right = virt_left + virt_w
+                fill_start = virt_right - active_w
+                over_start = virt_right - over_w
                 marker_x = fill_start
             else:
-                fill_start = self.x
-                over_start = self.x
-                marker_x = self.x + active_w
+                fill_start = virt_left
+                over_start = virt_left
+                marker_x = virt_left + active_w
+                
             if active_w > 0:
                 self.fill(fill_start, active_w, 0, c_bar, y)
             if over_w > 0:
@@ -342,7 +357,7 @@ class BarRenderer:
         Only active when the bar style is STYLE_ONE_BAR_TRIANGLE or
         STYLE_ONE_BAR_LINE.  Does nothing for other styles.
         """
-        if self.style not in (STYLE_ONE_BAR_TRIANGLE, STYLE_ONE_BAR_LINE):
+        if self.style not in (STYLE_ONE_BAR_TRIANGLE, STYLE_ONE_BAR_LINE, STYLE_ONE_BAR_DOT):
             return
         ctx = self.ctx
         y = self.base_y
@@ -368,7 +383,7 @@ class BarRenderer:
                 ctx.stroke()
             else:
                 ctx.new_path()
-        else:
+        elif self.style == STYLE_ONE_BAR_LINE:
             # Draw a vertical line spanning above and below the bar.
             if out_w > 0:
                 ctx.set_source_rgba(*c_out)
@@ -381,6 +396,18 @@ class BarRenderer:
             ctx.line_to(marker_x, y + self.h + 4)
             ctx.set_line_width(3)
             ctx.stroke()
+        elif self.style == STYLE_ONE_BAR_DOT:
+            # Draw a circle marker exactly on the line
+            radius = (self.h / 2) + 3
+            ctx.arc(marker_x, y + self.h / 2, radius, 0, 2 * math.pi)
+            ctx.set_source_rgba(*self.c_ind)
+            ctx.fill_preserve()
+            if out_w > 0:
+                ctx.set_source_rgba(*c_out)
+                ctx.set_line_width(max(1.0, out_w))
+                ctx.stroke()
+            else:
+                ctx.new_path()
 
     # ------------------------------------------------------------------
     # Peak monitor meter

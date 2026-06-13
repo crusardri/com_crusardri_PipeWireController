@@ -830,13 +830,7 @@ class DeviceControl(PipeWireActionBase):
                     bars.invert, right_half = self._fader_layout(settings, vertical=vertical)
                     bars.corner_flags = ((False, True, True, False) if right_half
                                          else (True, False, False, True))
-                    vol_local = None
-                    if vol_display is not None:
-                        if int(settings.get("volume_step", 10)) >= 0:
-                            vol_local = max(0.0, min(100.0, (vol_display - 50) * 2))
-                        else:
-                            vol_local = max(0.0, min(100.0, vol_display * 2))
-                    bars.marker(bars.single_bar(vol_local))
+                    bars.marker(bars.single_bar(vol_display))
                 if fader and vertical:
                     ctx.restore()
 

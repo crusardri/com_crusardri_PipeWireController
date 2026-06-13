@@ -812,7 +812,8 @@ class CustomBarRow(UIComponentsBase):
         # Style ('2 Bars' is only offered when a mixer is possible).
         style_options = [(1, lm.get("config.bar.style.1bar", "1 Bar")),
                          (2, lm.get("config.bar.style.1bar_tri", "1 Bar with Triangle")),
-                         (3, lm.get("config.bar.style.1bar_line", "1 Bar with Line"))]
+                         (3, lm.get("config.bar.style.1bar_line", "1 Bar with Line")),
+                         (4, lm.get("config.bar.style.1bar_dot", "1 Bar with Dot"))]
         if not hide_dual_style:
             style_options.insert(0, (0, lm.get("config.bar.style.2bars", "2 Bars")))
         default_style = 1 if hide_dual_style else 0

@@ -53,6 +53,7 @@
     "config.bar.style.1bar": "1 Barre",
     "config.bar.style.1bar_tri": "1 Barre avec Triangle",
     "config.bar.style.1bar_line": "1 Barre avec Ligne",
+    "config.bar.style.1bar_dot": "1 Barre avec Point",
     "config.bar.style.warning": "Le mode '2 barres' n'apparaîtra que lorsque le mode mélangeur est activé.",
     "config.bar.invert": "Inverser la Barre",
     "config.mode.title": "Mode",

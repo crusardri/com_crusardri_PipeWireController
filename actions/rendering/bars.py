@@ -81,6 +81,18 @@ class BarRenderer:
         self.c_ind = parse_color(settings.get("bar_ind_color", "#FFFFFF"))    # marker indicator
         self.c_neu = parse_color(settings.get("bar_neu_color", "#808080"))    # balance neutral line
 
+        # Per-corner rounding for background/fill/outline: (tl, tr, br, bl)
+        # booleans, or None to round all four corners.  Used by the split
+        # fader to draw a flat edge on the side shared with its partner key.
+        self.corner_flags = None
+
+        # Monitor meter sub-range: the peak/RMS dB fraction is remapped from
+        # [fill_lo, fill_hi] to fill the whole bar.  Defaults span the full
+        # range; the split fader sets 0-0.5 or 0.5-1.0 so each key shows its
+        # half of one continuous meter (mirrors the volume bar's remap).
+        self.fill_lo = 0.0
+        self.fill_hi = 1.0
+
     # ------------------------------------------------------------------
     # Colour source helpers
     # ------------------------------------------------------------------
@@ -138,7 +150,8 @@ class BarRenderer:
             return parse_color(self.auto_color(prefix, suffix, 0))
         if invert is None:
             invert = self.invert
-        return self.gradient_source(prefix, suffix, self.x, self.w, invert)
+        vx, vw = self._virtual_geometry(invert)
+        return self.gradient_source(prefix, suffix, vx, vw, invert)
 
     def _set_source(self, color):
         """Apply `color` to the cairo context (tuple → set_source_rgba, gradient → set_source)."""
@@ -151,24 +164,28 @@ class BarRenderer:
     # Primitives (background, fill, outline)
     # ------------------------------------------------------------------
 
+    def _bar_path(self, y):
+        """Trace the bar's rounded-rect path honouring `corner_flags`."""
+        if self.corner_flags is None:
+            rounded_rect(self.ctx, self.x, y, self.w, self.h, self.rad)
+        else:
+            tl, tr, br, bl = (self.rad if f else 0 for f in self.corner_flags)
+            rounded_rect_custom(self.ctx, self.x, y, self.w, self.h, tl, tr, br, bl)
+
     def background(self, y, suffix="a", invert=None):
         """Draw the bar background rectangle at vertical position `y`."""
         c_bg = self.color_source("bar_bg", suffix, "#424242", invert)
-        rounded_rect(self.ctx, self.x, y, self.w, self.h, self.rad)
+        self._bar_path(y)
         self._set_source(c_bg)
         self.ctx.fill()
 
     def fill(self, start_x, w, rad, color, y, corner_flags=None):
         """Draw a filled section of the bar.
 
-        `corner_flags` is a (tl, tr, br, bl) boolean tuple that controls
-        which corners are rounded.  None rounds all four corners.
+        `rad` and `corner_flags` are ignored because the caller now clips
+        the cairo context to the background's rounded rectangle path.
         """
-        if corner_flags is None:
-            tl = tr = br = bl = rad
-        else:
-            tl, tr, br, bl = (rad if f else 0 for f in corner_flags)
-        rounded_rect_custom(self.ctx, start_x, y, w, self.h, tl, tr, br, bl)
+        self.ctx.rectangle(start_x, y, w, self.h)
         self._set_source(color)
         self.ctx.fill()
 
@@ -179,13 +196,37 @@ class BarRenderer:
             c = parse_color(self.settings.get("bar_out_color", self.defs.get("bar_out_color", "#000000")))
             self.ctx.set_source_rgba(*c)
             self.ctx.set_line_width(out_w)
-            rounded_rect(self.ctx, self.x, y, self.w, self.h, self.rad)
+            self._bar_path(y)
             self.ctx.stroke()
 
-    @staticmethod
-    def _fill_rad(rad, w):
-        """Clamp the corner radius to half the fill width to avoid artefacts."""
-        return rad if w > rad * 2 else w / 2
+
+
+    def _meter_pct(self, db):
+        """Map a dB value to a 0-1 fill fraction within the active sub-range."""
+        p = _db_to_pct(db)
+        lo, hi = self.fill_lo, self.fill_hi
+        if hi <= lo:
+            return p
+        return max(0.0, min(1.0, (p - lo) / (hi - lo)))
+
+    def _virtual_geometry(self, invert):
+        """Calculate the virtual geometry spanning the full 0-100% meter range.
+        
+        For the split fader, the active sub-range (fill_lo to fill_hi) maps
+        to the physical bar (self.x, self.w). The virtual bar covers the
+        entire 0.0-1.0 range, potentially starting outside the physical key.
+        Returns (virtual_left_edge_x, virtual_width).
+        """
+        span = self.fill_hi - self.fill_lo
+        if span <= 0 or span >= 1.0:
+            return self.x, self.w
+            
+        virt_w = self.w / span
+        if invert:
+            virt_right_edge = self.x + self.w + (self.fill_lo * virt_w)
+            return virt_right_edge - virt_w, virt_w
+        else:
+            return self.x - (self.fill_lo * virt_w), virt_w
 
     def _volume_widths(self, vol_pct):
         """Compute the normal-range and over-100% fill widths for a given volume."""
@@ -205,14 +246,18 @@ class BarRenderer:
         """
         self.background(y, suffix, invert)
         if vol_pct is not None:
+            self.ctx.save()
+            self._bar_path(y)
+            self.ctx.clip()
             c_bar = self.color_source("bar", suffix, "#FFFFFF", invert)
             active_w, over_w = self._volume_widths(vol_pct)
             if active_w > 0:
                 start_x = self.x if not invert else self.x + self.w - active_w
-                self.fill(start_x, active_w, self._fill_rad(self.rad, active_w), c_bar, y)
+                self.fill(start_x, active_w, 0, c_bar, y)
             if over_w > 0:
                 start_x = self.x if not invert else self.x + self.w - over_w
-                self.fill(start_x, over_w, self._fill_rad(self.rad, over_w), self.c_over, y)
+                self.fill(start_x, over_w, 0, self.c_over, y)
+            self.ctx.restore()
         self.outline(y)
 
     def single_bar(self, vol_pct):
@@ -226,6 +271,10 @@ class BarRenderer:
         c_bar = self.color_source("bar", "a", "#FFFFFF", self.invert)
         marker_x = self.x
         if vol_pct is not None:
+            self.ctx.save()
+            self._bar_path(y)
+            self.ctx.clip()
+
             active_w, over_w = self._volume_widths(vol_pct)
             if self.invert:
                 fill_start = self.x + self.w - active_w
@@ -236,9 +285,11 @@ class BarRenderer:
                 over_start = self.x
                 marker_x = self.x + active_w
             if active_w > 0:
-                self.fill(fill_start, active_w, self._fill_rad(self.rad, active_w), c_bar, y)
+                self.fill(fill_start, active_w, 0, c_bar, y)
             if over_w > 0:
-                self.fill(over_start, over_w, self._fill_rad(self.rad, over_w), self.c_over, y)
+                self.fill(over_start, over_w, 0, self.c_over, y)
+                
+            self.ctx.restore()
         self.outline(y)
         return marker_x
 
@@ -251,6 +302,11 @@ class BarRenderer:
         """
         y = self.base_y
         self.background(y, "a", self.invert)
+        
+        self.ctx.save()
+        self._bar_path(y)
+        self.ctx.clip()
+        
         c_bar = self.color_source("bar", "a", "#FFFFFF", self.invert)
         center_x = self.x + self.w / 2.0
 
@@ -259,17 +315,16 @@ class BarRenderer:
             fill_w = int((self.w / 2.0) * pct)
             fill_start = int(center_x - fill_w)
             marker_x = fill_start
-            # Rounded on the outer sides, flat towards the centre.
-            corner_flags = (True, False, False, True)
         else:
             pct = (balance - 50.0) / 50.0
             fill_w = int((self.w / 2.0) * pct)
             fill_start = int(center_x)
             marker_x = int(center_x + fill_w)
-            corner_flags = (False, True, True, False)
 
         if fill_w > 0:
-            self.fill(fill_start, fill_w, self._fill_rad(self.rad, fill_w), c_bar, y, corner_flags)
+            self.fill(fill_start, fill_w, 0, c_bar, y)
+
+        self.ctx.restore()
 
         # Draw the neutral centre line to show the equal-volume reference point.
         self.ctx.set_source_rgba(*self.c_neu)
@@ -349,29 +404,31 @@ class BarRenderer:
         self.background(y, suffix, invert)
 
         cmode = int(s.get("monitor_color_mode", 0))
-        fill_w = int(self.w * _db_to_pct(peak_db))
+        fill_w = int(self.w * self._meter_pct(peak_db))
         if fill_w > 0:
-            rad_fill = self._fill_rad(self.rad, fill_w)
+            self.ctx.save()
+            self._bar_path(y)
+            self.ctx.clip()
+
             fill_x = (self.x + self.w - fill_w) if invert else self.x
 
             if cmode == 0:
                 # Solid colour mode.
-                self.fill(fill_x, fill_w, rad_fill, parse_color(s.get("monitor_color_solid", "#ffffff")), y)
+                self.fill(fill_x, fill_w, 0, parse_color(s.get("monitor_color_solid", "#ffffff")), y)
             elif cmode == 3:
                 # Auto solid: first palette colour from the icon.
-                self.fill(fill_x, fill_w, rad_fill, parse_color(self.auto_color("monitor", suffix, 0)), y)
+                self.fill(fill_x, fill_w, 0, parse_color(self.auto_color("monitor", suffix, 0)), y)
             else:
-                # Gradient modes (1, 2, 4): clip the fill to a rounded rect path first,
-                # then paint the full-width gradient through it.
-                rounded_rect_custom(self.ctx, fill_x, y, fill_w, self.h,
-                                    rad_fill, rad_fill, rad_fill, rad_fill)
+                self.ctx.rectangle(fill_x, y, fill_w, self.h)
                 if cmode == 1:
                     lg = self._tricolor_gradient(invert)
                 else:
-                    # cmode 2: manual gradient; cmode 4: auto gradient.
-                    lg = self.gradient_source("monitor", suffix, self.x, self.w, invert)
+                    vx, vw = self._virtual_geometry(invert)
+                    lg = self.gradient_source("monitor", suffix, vx, vw, invert)
                 self.ctx.set_source(lg)
                 self.ctx.fill()
+                
+            self.ctx.restore()
 
         self.outline(y)
 
@@ -385,10 +442,11 @@ class BarRenderer:
         (settings: 'monitor_threshold_mid', 'monitor_threshold_high').
         """
         s = self.settings
+        vx, vw = self._virtual_geometry(invert)
         if invert:
-            lg = cairo.LinearGradient(self.x + self.w, 0, self.x, 0)
+            lg = cairo.LinearGradient(vx + vw, 0, vx, 0)
         else:
-            lg = cairo.LinearGradient(self.x, 0, self.x + self.w, 0)
+            lg = cairo.LinearGradient(vx, 0, vx + vw, 0)
         c_low = parse_color(s.get("monitor_color_low", "#00ff00"))
         c_mid = parse_color(s.get("monitor_color_mid", "#ffff00"))
         c_high = parse_color(s.get("monitor_color_high", "#ff0000"))
@@ -409,7 +467,7 @@ class BarRenderer:
         Drawn with an optional outline for visibility against any background.
         """
         s = self.settings
-        pct_rms = _db_to_pct(rms_db)
+        pct_rms = self._meter_pct(rms_db)
         # Clamp the line position one pixel inset from the bar edges.
         if invert:
             rms_x = self.x + self.w - int(self.w * pct_rms)

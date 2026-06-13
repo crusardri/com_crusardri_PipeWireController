@@ -150,6 +150,13 @@ class UIComponentsBase(Adw.PreferencesRow):
     def lm(self):
         return self.parent.plugin_base.lm
 
+    def _get_current_default(self, key, fallback=0):
+        if hasattr(self.parent, "get_calculated_defaults"):
+            calc = self.parent.get_calculated_defaults()
+            dc = calc[0] if isinstance(calc, tuple) else calc
+            return dc.get(key, fallback)
+        return fallback
+
     # ------------------------------------------------------------------
     # Layout helpers
     # ------------------------------------------------------------------
@@ -226,6 +233,16 @@ class UIComponentsBase(Adw.PreferencesRow):
             self._updating = False
         self.on_change()
 
+    def update_dynamic_defaults(self):
+        """Update widgets to new calculated defaults IF they are not explicitly set in settings."""
+        self._updating = True
+        try:
+            for restore, keys in self._resettables:
+                if not any(k in self.settings for k in keys):
+                    restore()
+        finally:
+            self._updating = False
+
     def add_reset_button(self, box, restore, keys=(), label_text=""):
         """Append a small individual reset button bound to `restore`."""
         reset_word = self.lm.get("config.reset", "Reset")
@@ -289,7 +306,7 @@ class UIComponentsBase(Adw.PreferencesRow):
         the calculated defaults.  The label joins a per-column SizeGroup so
         spin columns align across rows.
         """
-        default_val = default if default is not None else self.defaults_calc.get(key, 0)
+        default_val = default if default is not None else self._get_current_default(key, 0)
         lbl = Gtk.Label(label=label_text, xalign=0, margin_start=margin_start, margin_end=5,
                         hexpand=label_hexpand)
         if not label_hexpand:
@@ -298,9 +315,11 @@ class UIComponentsBase(Adw.PreferencesRow):
         spin = Gtk.SpinButton.new_with_range(lo, hi, step)
         spin.set_value(self.settings.get(key, default_val))
         spin.connect("value-changed", self.on_change)
+        spin._lbl = lbl  # Attach label for dynamic text updates
         box.append(spin)
-        self._defaults[key] = default_val
-        restore = lambda: spin.set_value(default_val)
+        if default is not None:
+            self._defaults[key] = default
+        restore = lambda: spin.set_value(default if default is not None else self._get_current_default(key, 0))
         self._register(restore, (key,))
         if with_reset:
             self.add_reset_button(box, restore, (key,), label_text)
@@ -321,7 +340,10 @@ class UIComponentsBase(Adw.PreferencesRow):
     def save_or_del(self, key, val, default=None):
         """Saves the value only if it differs from the default (keeps settings clean)."""
         if default is None:
-            default = self._defaults.get(key, self.defaults_calc.get(key, 0))
+            if key in self._defaults:
+                default = self._defaults[key]
+            else:
+                default = self._get_current_default(key, 0)
         save_or_del_in(self.settings, key, val, default)
 
     def on_change(self, *args):
@@ -764,27 +786,40 @@ class CustomIconRow(UIComponentsBase):
 class CustomBarRow(UIComponentsBase):
     """Bar configuration: style, colors, inversion, outline and geometry."""
 
-    def __init__(self, settings_dict, parent_action):
+    def __init__(self, settings_dict, parent_action, hide_dual_style=False,
+                 absolute_geometry=False):
         super().__init__(settings_dict, parent_action)
         lm = self.lm
+        # `hide_dual_style` is used by actions that can never run a mixer
+        # (e.g. Device Control): the '2 Bars' option and its warning are dropped.
+        self.hide_dual_style = hide_dual_style
+        # `absolute_geometry` stores the geometry spins as literal pixel values
+        # (Device Control) instead of deleting them when they equal the
+        # calculated default.  Without it a value equal to the default would be
+        # an "alias" for auto-calculation and could shift when the default does.
+        self.absolute_geometry = absolute_geometry
 
         self.main_box = self.build_main_box(lm.get("config.bar.format"))
 
-        lbl_warn = Gtk.Label(label=lm.get("config.bar.style.warning",
-                                          "The '2 Bars' mode will only appear when the mixer mode is enabled."),
-                             xalign=0)
-        lbl_warn.add_css_class("dim-label")
-        lbl_warn.set_wrap(True)
-        self.main_box.append(lbl_warn)
+        if not hide_dual_style:
+            lbl_warn = Gtk.Label(label=lm.get("config.bar.style.warning",
+                                              "The '2 Bars' mode will only appear when the mixer mode is enabled."),
+                                 xalign=0)
+            lbl_warn.add_css_class("dim-label")
+            lbl_warn.set_wrap(True)
+            self.main_box.append(lbl_warn)
 
-        # Style
+        # Style ('2 Bars' is only offered when a mixer is possible).
+        style_options = [(1, lm.get("config.bar.style.1bar", "1 Bar")),
+                         (2, lm.get("config.bar.style.1bar_tri", "1 Bar with Triangle")),
+                         (3, lm.get("config.bar.style.1bar_line", "1 Bar with Line"))]
+        if not hide_dual_style:
+            style_options.insert(0, (0, lm.get("config.bar.style.2bars", "2 Bars")))
+        default_style = 1 if hide_dual_style else 0
         self.style_combo = self.create_combo_row(
             self.main_box, lm.get("config.bar.style", "Style"),
-            [(0, lm.get("config.bar.style.2bars", "2 Bars")),
-             (1, lm.get("config.bar.style.1bar", "1 Bar")),
-             (2, lm.get("config.bar.style.1bar_tri", "1 Bar with Triangle")),
-             (3, lm.get("config.bar.style.1bar_line", "1 Bar with Line"))],
-            self.settings.get("bar_style", 0), key="bar_style")
+            style_options,
+            self.settings.get("bar_style", default_style), key="bar_style")
 
         # Main colors
         self.bar_color_sel = ColorModeSelector(
@@ -866,6 +901,24 @@ class CustomBarRow(UIComponentsBase):
                                              hi=100)
 
         self.update_neu_visibility()
+        self.update_geometry_labels()
+
+    def update_geometry_labels(self):
+        """Swap geometry labels for vertical faders to match user expectation."""
+        is_vert = (self.settings.get("icon_style") == "fader_v" and 
+                   self.settings.get("control_action", "set") == "adjust")
+        
+        lm = self.lm
+        w_text = lm.get("config.size.height", "Height") if is_vert else lm.get("config.size.width", "Width")
+        h_text = lm.get("config.size.width", "Width") if is_vert else lm.get("config.size.height", "Height")
+        x_text = lm.get("config.pos.y", "Pos Y") if is_vert else lm.get("config.pos.x", "Pos X")
+        y_text = lm.get("config.pos.x", "Pos X") if is_vert else lm.get("config.pos.y", "Pos Y")
+        
+        if hasattr(self.w_spin, "_lbl"):
+            self.w_spin._lbl.set_label(w_text)
+            self.h_spin._lbl.set_label(h_text)
+            self.x_spin._lbl.set_label(x_text)
+            self.y_spin._lbl.set_label(y_text)
 
     def update_neu_visibility(self):
         """The neutral color only applies to the balance bar (dual + '1 Bar' style)."""
@@ -878,7 +931,9 @@ class CustomBarRow(UIComponentsBase):
     def on_change(self, *args):
         if self._updating:
             return
-        self.save_or_del("bar_style", int(dropdown_get_id(self.style_combo) or 0), 0)
+        default_style = 1 if self.hide_dual_style else 0
+        self.save_or_del("bar_style", int(dropdown_get_id(self.style_combo) or default_style),
+                         default_style)
         self.update_neu_visibility()
 
         self.bar_color_sel.save_settings()
@@ -894,7 +949,11 @@ class CustomBarRow(UIComponentsBase):
         for key, spin in (("bar_width", self.w_spin), ("bar_height", self.h_spin),
                           ("bar_x", self.x_spin), ("bar_y", self.y_spin),
                           ("bar_radius", self.rad_spin)):
-            self.save_or_del(key, int(spin.get_value()))
+            if self.absolute_geometry:
+                # Store the literal pixel value; never collapse to "auto".
+                self.settings[key] = int(spin.get_value())
+            else:
+                self.save_or_del(key, int(spin.get_value()))
         self.notify_parent()
 
 
@@ -1194,9 +1253,12 @@ class VolumeMonitorBarRow(UIComponentsBase):
 
 class VolumeMonitorSettingsRow(UIComponentsBase):
     """Peak monitor configuration: FPS and Switch Delay."""
-    def __init__(self, settings, parent):
+    def __init__(self, settings, parent, show_db_switch=True):
         super().__init__(settings, parent)
         lm = self.lm
+        # `show_db_switch` lets actions that provide their own dB toggle
+        # (e.g. Device Control) drop the duplicate here.
+        self.show_db_switch = show_db_switch
         self.main_box = self.build_main_box()
         self.settings_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=self.SPACING)
         self.main_box.append(self.settings_container)
@@ -1212,13 +1274,14 @@ class VolumeMonitorSettingsRow(UIComponentsBase):
         lbl_fps_warn.add_css_class("dim-label")
         lbl_fps_warn.set_wrap(True)
         self.settings_container.append(lbl_fps_warn)
-        
-        self.add_section_separator(self.settings_container)
 
-        # Show dB
-        self.sw_db = self.create_switch_row(
-            self.settings_container, lm.get("config.monitor.show_db", "Show Decibels"),
-            "monitor_show_db", False)
+        self.sw_db = None
+        if show_db_switch:
+            self.add_section_separator(self.settings_container)
+            # Show dB
+            self.sw_db = self.create_switch_row(
+                self.settings_container, lm.get("config.monitor.show_db", "Show Decibels"),
+                "monitor_show_db", False)
 
         self.add_section_separator(self.settings_container)
 
@@ -1233,7 +1296,8 @@ class VolumeMonitorSettingsRow(UIComponentsBase):
             return
         self.save_or_del("monitor_fps", int(dropdown_get_id(self.cb_fps) or 10), 10)
         self.save_or_del("monitor_delay", int(self.spin_delay.get_value()))
-        self.save_or_del("monitor_show_db", self.sw_db.get_active(), False)
+        if self.sw_db is not None:
+            self.save_or_del("monitor_show_db", self.sw_db.get_active(), False)
         self.notify_parent()
 
 

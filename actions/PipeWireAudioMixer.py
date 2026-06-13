@@ -358,6 +358,10 @@ class PipeWireAudioMixer(PipeWireActionBase):
         Uses the already-resolved pulsectl object (no additional IPC).
         Priority: app binary name → device description → device name → setting name.
         """
+        alias = settings.get(f"device_alias_{suffix}", "").strip()
+        if alias:
+            return alias
+
         if dev:
             app_name = PulseService.app_binary(dev)
             if app_name:
@@ -366,12 +370,11 @@ class PipeWireAudioMixer(PipeWireActionBase):
                 return dev.description
             if getattr(dev, "name", None):
                 return dev.name
-
-        # Device is offline; fall back to the configured name or a description query.
-        dtype = settings.get(f"device_type_{suffix}", "sink")
-        name = settings.get(f"device_name_{suffix}") or \
-            ("Auto" if dtype == "application" else "default")
+        
+        # Device is offline; fall back to the configured name.
+        name = settings.get(f"device_name_{suffix}") or "default"
         if name == "default":
+            dtype = settings.get(f"device_type_{suffix}", "sink")
             if dtype in ("sink", "source") and self.pulse_service:
                 desc = self.pulse_service.get_default_device_description(dtype)
                 if desc:
